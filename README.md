@@ -1,98 +1,178 @@
-<div align="center">    
- 
-# Your Project Name     
+# ClinicalCLIP: Clinician-Guided Multimodal Gait Analysis with CLIP
 
-[![Paper](http://img.shields.io/badge/paper-arxiv.1001.2234-B31B1B.svg)](https://www.nature.com/articles/nature14539)
-[![Conference](http://img.shields.io/badge/NeurIPS-2019-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)
-[![Conference](http://img.shields.io/badge/ICLR-2019-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)
-[![Conference](http://img.shields.io/badge/AnyConference-year-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)  
-<!--
-ARXIV   
-[![Paper](http://img.shields.io/badge/arxiv-math.co:1480.1111-B31B1B.svg)](https://www.nature.com/articles/nature14539)
--->
-![CI testing](https://github.com/PyTorchLightning/deep-learning-project-template/workflows/CI%20testing/badge.svg?branch=master&event=push)
+This repository contains the official PyTorch implementation of ClinicalCLIP, a clinician-guided multimodal framework for video-based gait analysis and clinical diagnosis.
+
+The core idea is to integrate clinical prior knowledge (e.g., physician-annotated attention maps) with vision–language pretraining (CLIP) to improve interpretability, robustness, and diagnostic relevance in gait-based analysis.
+
+⸻
+
+🔍 Motivation
+
+Automated gait analysis has shown great potential for non-invasive clinical diagnosis.
+However, most existing deep learning approaches:
+	•	Treat all spatial–temporal regions equally
+	•	Ignore clinically meaningful motion cues
+	•	Lack interpretability for medical decision support
+
+In real clinical practice, physicians focus on specific joints, body regions, and motion phases when assessing gait abnormalities.
+
+ClinicalCLIP bridges this gap by aligning gait videos with clinician-guided attention using CLIP-style multimodal learning.
+
+⸻
+
+✨ Key Contributions
+	•	🧠 Clinical Knowledge-Guided Learning
+Incorporates clinician-provided attention maps highlighting diagnostically important gait regions.
+	•	🔗 CLIP-Based Multimodal Alignment
+Aligns gait video representations with clinical attention cues in a shared embedding space.
+	•	🎥 Video-Level Spatiotemporal Modeling
+Supports 3D CNN / Transformer-based backbones for robust gait representation learning.
+	•	🔍 Interpretability by Design
+Enables visual and quantitative analysis of where and when the model attends during gait.
+	•	🏥 Non-Invasive Clinical Application
+Designed for real-world clinical gait assessment without wearable sensors.
+
+⸻
+
+🧩 Framework Overview
+
+Input:
+  - Gait video (RGB)
+  - Clinician-annotated attention maps (spatial / spatiotemporal)
+
+Pipeline:
+  Video Encoder (3D CNN / ViT)
+        │
+        ├── Visual Embedding
+        │
+  Attention Encoder
+        │
+        ├── Clinical Embedding
+        │
+  ──► CLIP-style Contrastive Alignment
+        │
+        └── Downstream Tasks
+              • Diagnosis / Classification
+              • Retrieval
+              • Interpretability Analysis
 
 
-<!--  
-Conference   
--->   
-</div>
- 
-## Description   
-This github repository is a template for deep learning projects. It is based on PyTorch Lightning and contains the following features:
-- DataModule
-- Model
-- Trainer
-- Test helper
+⸻
 
-## How to run   
-First, install dependencies   
-```bash
-# clone project   
-git clone [url]
+📁 Repository Structure
 
-# install project   
-cd deep-learning-project-template 
-pip install -e .   
+ClinicalCLIP/
+├── configs/                # Hydra configuration files
+├── datasets/               # Dataset loaders & preprocessing
+│   ├── video/
+│   ├── attention_map/
+│   └── labels/
+├── models/
+│   ├── video_encoder/      # 3D CNN / Transformer backbones
+│   ├── attention_encoder/  # Clinical attention encoders
+│   ├── clip_head/          # CLIP-style projection heads
+│   └── fusion/
+├── trainers/               # PyTorch Lightning trainers
+├── evaluation/             # Metrics & analysis scripts
+├── visualization/          # Attention & gait visualization
+├── scripts/                # Training / evaluation scripts
+└── README.md
+
+
+⸻
+
+🚀 Getting Started
+
+1️⃣ Environment Setup
+
+conda create -n clinicalclip python=3.10
+conda activate clinicalclip
 pip install -r requirements.txt
- ```   
- Next, navigate to any file and run it.   
- ```bash
-# module folder
-cd project
 
-# run module (example: mnist as your main contribution)   
-python lit_classifier_main.py    
-```
+2️⃣ Dataset Preparation
 
-## Project Organization   
-```txt
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
-│
-├── docs               <- A default Sphinx project; see sphinx-doc.org for details
-│
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── project            <- Source code for use in this project.
-│   ├── __init__.py    <- Makes project a Python module
-```
+Expected data format:
 
-## Imports
-This project is setup as a package which means you can now easily import any file into any other file like so:
-```python
-from project.datasets.mnist import mnist
-from project.lit_classifier_main import LitClassifier
-from pytorch_lightning import Trainer
+data/
+├── videos/
+│   └── subject_x/
+│       └── gait.mp4
+├── attention_maps/
+│   └── subject_x/
+│       └── attention.npy
+└── labels.csv
 
-# model
-model = LitClassifier()
+Attention maps can be frame-level, joint-level, or region-level, depending on the experiment.
 
-# data
-train, val, test = mnist()
+⸻
 
-# train
-trainer = Trainer()
-trainer.fit(model, train, val)
+3️⃣ Training
 
-# test using the best model!
-trainer.test(test_dataloaders=test)
-```
+python scripts/train.py \
+  experiment=clinicalclip_gait \
+  model=clip_video_attention
 
-### Citation   
-```
-@article{YourName,
-  title={Your Title},
-  author={Your team},
-  journal={Location},
-  year={Year}
+Hydra is used for all configurations.
+
+⸻
+
+📊 Evaluation
+
+Supported evaluation settings include:
+	•	Diagnosis accuracy / F1-score
+	•	Cross-subject validation
+	•	Attention consistency analysis
+	•	Ablation on clinical priors
+
+python scripts/eval.py
+
+
+⸻
+
+📈 Visualization
+
+The repository provides tools for:
+	•	Attention heatmap overlay on gait videos
+	•	Phase-wise gait attention analysis
+	•	Case-level interpretability reports
+
+python visualization/vis_attention.py
+
+
+⸻
+
+🏥 Clinical Use Case
+
+This framework is designed for applications such as:
+	•	Adult Spinal Deformity (ASD) gait assessment
+	•	Neurological disorder screening
+	•	Explainable clinical decision support
+	•	Human-centered AI in medical video analysis
+
+⸻
+
+📄 Citation
+
+If you find this work useful, please consider citing:
+
+@article{chen2025clinicalclip,
+  title   = {ClinicalCLIP: Clinician-Guided Multimodal Gait Analysis via Vision–Language Pretraining},
+  author  = {Chen, Kaixu and collaborators},
+  journal = {TBD},
+  year    = {2025}
 }
-```   
+
+
+⸻
+
+📬 Contact
+
+Kaixu Chen
+University of Tsukuba
+📧 chenkaixusan@gmail.com
+
+⸻
+
+⭐ Acknowledgements
+
+This project is inspired by interdisciplinary collaboration between computer vision researchers and clinicians, aiming to build trustworthy and interpretable medical AI systems.
