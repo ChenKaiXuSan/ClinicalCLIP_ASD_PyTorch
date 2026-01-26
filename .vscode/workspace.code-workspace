@@ -10,7 +10,7 @@
 		},
 		{
 			"name": "reference",
-			"path": "../KnowledgeGuided-ASD_PyTorch"
+			"path": "/workspace/KnowledgeGuided-ASD_PyTorch"
 		}
 	]
 }
