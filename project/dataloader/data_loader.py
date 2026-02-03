@@ -1,116 +1,208 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
 """
-File: /Users/chenkaixu/deep-learning-project-template/project/dataloader/data_loader.py
-Project: /Users/chenkaixu/deep-learning-project-template/project/dataloader
-Created Date: Saturday November 30th 2024
-Author: Kaixu Chen
+File: data_loader.py
+Project: dataloader
+Created Date: 2026-02-03
+Author: OpenAI Assistant
 -----
 Comment:
-
-Have a good code time :)
------
-Last Modified: Saturday November 30th 2024 12:34:29 am
-Modified By: the developer formerly known as Kaixu Chen at <chenkaixusan@gmail.com>
------
-Copyright (c) 2024 The University of Tsukuba
------
-HISTORY:
-Date      	By	Comments
-----------	---	---------------------------------------------------------
+Lightning data module for gait videos with optional clinician attention maps.
 """
 
-import logging
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Dict, Optional
+
+from torchvision.transforms import Compose, Resize
+from pytorch_lightning import LightningDataModule
 
 import torch
 from torch.utils.data import DataLoader
-from pytorch_lightning import LightningDataModule
+
 from pytorchvideo.data import make_clip_sampler
 from pytorchvideo.data.labeled_video_dataset import labeled_video_dataset
 
+from project.dataloader.whole_video_dataset import whole_video_dataset
+from project.dataloader.utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
 
-class DataModule(LightningDataModule):
-    def __init__(self, opt):
+
+DISEASE_TO_NUM_MAPPING: Dict = {
+    2: {"ASD": 0, "non-ASD": 1},
+    3: {"ASD": 0, "DHS": 1, "LCS_HipOA": 2},
+    4: {"ASD": 0, "DHS": 1, "LCS_HipOA": 2, "normal": 3},
+}
+
+
+class WalkDataModule(LightningDataModule):
+    def __init__(self, opt, dataset_idx: Dict = None):
         super().__init__()
 
+        self._batch_size = opt.data.batch_size
+        self._num_workers = opt.data.num_workers
+        self._img_size = opt.data.img_size
+        self._clip_duration = opt.train.clip_duration
+        self.uniform_temporal_subsample_num = opt.train.uniform_temporal_subsample_num
+
+        self._dataset_idx = dataset_idx
+        self._doctor_res_path = opt.data.doctor_results_path
+        self._skeleton_path = opt.data.skeleton_path
+        self._class_num = opt.model.model_class_num
+        self._experiment = opt.train.experiment
+        self._attn_map = opt.train.attn_map
+
+        self.mapping_transform = Compose(
+            [
+                UniformTemporalSubsample(self.uniform_temporal_subsample_num),
+                Div255(),
+                Resize(size=[self._img_size, self._img_size]),
+            ]
+        )
+
+        self.train_video_transform = Compose(
+            [
+                ApplyTransformToKey(
+                    key="video",
+                    transform=Compose(
+                        [
+                            Div255(),
+                            Resize(size=[self._img_size, self._img_size]),
+                            UniformTemporalSubsample(
+                                self.uniform_temporal_subsample_num
+                            ),
+                        ]
+                    ),
+                ),
+            ]
+        )
+
+        self.val_video_transform = Compose(
+            [
+                ApplyTransformToKey(
+                    key="video",
+                    transform=Compose(
+                        [
+                            Div255(),
+                            Resize(size=[self._img_size, self._img_size]),
+                            UniformTemporalSubsample(
+                                self.uniform_temporal_subsample_num
+                            ),
+                        ]
+                    ),
+                ),
+            ]
+        )
+
     def prepare_data(self) -> None:
-        """here prepare the temp val data path,
-        because the val dataset not use the gait cycle index,
-        so we directly use the pytorchvideo API to load the video.
-        AKA, use whole video to validate the model.
-        """
         ...
 
     def setup(self, stage: Optional[str] = None) -> None:
-        """
-        assign tran, val, predict datasets for use in dataloaders
+        if self._attn_map:
+            self.train_gait_dataset = whole_video_dataset(
+                experiment=self._experiment,
+                dataset_idx=self._dataset_idx[0],
+                transform=self.mapping_transform,
+                skeleton_path=self._skeleton_path,
+                doctor_res_path=self._doctor_res_path,
+                clip_duration=self._clip_duration,
+            )
 
-        Args:
-            stage (Optional[str], optional): trainer.stage, in ('fit', 'validate', 'test', 'predict'). Defaults to None.
-        """
-        ...
+            self.val_gait_dataset = whole_video_dataset(
+                experiment=self._experiment,
+                dataset_idx=self._dataset_idx[1],
+                transform=self.mapping_transform,
+                doctor_res_path=self._doctor_res_path,
+                skeleton_path=self._skeleton_path,
+                clip_duration=self._clip_duration,
+            )
 
-    def collate_fn(self, batch):
-        """this function process the batch data, and return the batch data.
+            self.test_gait_dataset = whole_video_dataset(
+                experiment=self._experiment,
+                dataset_idx=self._dataset_idx[1],
+                transform=self.mapping_transform,
+                doctor_res_path=self._doctor_res_path,
+                skeleton_path=self._skeleton_path,
+                clip_duration=self._clip_duration,
+            )
 
-        Args:
-            batch (list): the batch from the dataset.
-            The batch include the one patient info from the json file.
-            Here we only cat the one patient video tensor, and label tensor.
+        else:
+            self.train_gait_dataset = labeled_video_dataset(
+                data_path=self._dataset_idx[2],
+                clip_sampler=make_clip_sampler("uniform", self._clip_duration),
+                transform=self.train_video_transform,
+            )
 
-        Returns:
-            dict: {video: torch.tensor, label: torch.tensor, info: list}
-        """
-        ...
+            self.val_gait_dataset = labeled_video_dataset(
+                data_path=self._dataset_idx[3],
+                clip_sampler=make_clip_sampler("uniform", self._clip_duration),
+                transform=self.val_video_transform,
+            )
+
+            self.test_gait_dataset = labeled_video_dataset(
+                data_path=self._dataset_idx[3],
+                clip_sampler=make_clip_sampler("uniform", self._clip_duration),
+                transform=self.val_video_transform,
+            )
+
+    def collate_fn(self, batch: list[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        batch_label = []
+        batch_video = []
+        batch_attn_map = []
+
+        for i in batch:
+            gait_num, *_ = i["video"].shape
+            disease = i["disease"]
+
+            batch_video.append(i["video"])
+            batch_attn_map.append(i["attn_map"])
+
+            for _ in range(gait_num):
+                if disease in DISEASE_TO_NUM_MAPPING[self._class_num].keys():
+                    assert (
+                        DISEASE_TO_NUM_MAPPING[self._class_num][disease]
+                        == i["label"]
+                    ), "The disease label mapping is not correct!"
+
+                    batch_label.append(
+                        DISEASE_TO_NUM_MAPPING[self._class_num][disease]
+                    )
+                else:
+                    batch_label.append(
+                        DISEASE_TO_NUM_MAPPING[self._class_num]["non-ASD"]
+                    )
+
+        return {
+            "video": torch.cat(batch_video, dim=0),
+            "label": torch.tensor(batch_label),
+            "attn_map": torch.cat(batch_attn_map, dim=0),
+            "info": batch,
+        }
 
     def train_dataloader(self) -> DataLoader:
-        """ create the train data loader
-
-        Returns:
-            DataLoader: _description_
-        """        
-        train_data_loader = DataLoader(
+        return DataLoader(
             self.train_gait_dataset,
-            batch_size=self._default_batch_size,
-            num_workers=self._NUM_WORKERS,
-            pin_memory=True,
+            batch_size=self._batch_size,
+            num_workers=self._num_workers,
+            pin_memory=False,
             shuffle=True,
             drop_last=True,
+            collate_fn=self.collate_fn,
         )
-
-        return train_data_loader
 
     def val_dataloader(self) -> DataLoader:
-        """ create the val data loader
-
-        Returns:
-            DataLoader: _description_
-        """        
-        val_data_loader = DataLoader(
+        return DataLoader(
             self.val_gait_dataset,
-            batch_size=self._default_batch_size,
-            num_workers=self._NUM_WORKERS,
-            pin_memory=True,
+            batch_size=self._batch_size,
+            num_workers=self._num_workers,
+            pin_memory=False,
             shuffle=False,
             drop_last=True,
+            collate_fn=self.collate_fn,
         )
-
-        return val_data_loader
 
     def test_dataloader(self) -> DataLoader:
-        """ create the test data loader
-
-        Returns:
-            DataLoader: 
-        """
-        test_data_loader = DataLoader(
+        return DataLoader(
             self.test_gait_dataset,
-            batch_size=self._default_batch_size,
-            num_workers=self._NUM_WORKERS,
-            pin_memory=True,
+            batch_size=self._batch_size,
+            num_workers=self._num_workers,
+            pin_memory=False,
             shuffle=False,
             drop_last=True,
+            collate_fn=self.collate_fn,
         )
-
-        return test_data_loader

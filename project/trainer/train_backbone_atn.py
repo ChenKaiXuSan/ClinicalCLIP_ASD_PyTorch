@@ -39,7 +39,7 @@ from torchmetrics.classification import (
     MulticlassConfusionMatrix
 )
 
-from project.helper import save_CAM, save_CM
+from project.utils.helper import save_CAM, save_CM
 
 
 class BackboneATNModule(LightningModule):

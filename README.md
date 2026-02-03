@@ -63,19 +63,11 @@ Pipeline:
 
 ClinicalCLIP/
 ├── configs/                # Hydra configuration files
-├── datasets/               # Dataset loaders & preprocessing
-│   ├── video/
-│   ├── attention_map/
-│   └── labels/
-├── models/
-│   ├── video_encoder/      # 3D CNN / Transformer backbones
-│   ├── attention_encoder/  # Clinical attention encoders
-│   ├── clip_head/          # CLIP-style projection heads
-│   └── fusion/
-├── trainers/               # PyTorch Lightning trainers
-├── evaluation/             # Metrics & analysis scripts
-├── visualization/          # Attention & gait visualization
-├── scripts/                # Training / evaluation scripts
+├── project/                # Training entrypoints and models
+│   ├── dataloader/         # Video + attention map datasets
+│   ├── models/             # CLIP alignment + baselines
+│   └── trainer/            # PyTorch Lightning trainers
+├── tests/                  # Unit tests
 └── README.md
 
 
@@ -91,7 +83,7 @@ pip install -r requirements.txt
 
 2️⃣ Dataset Preparation
 
-Expected data format:
+Expected data format (for CLIP alignment with clinician attention):
 
 data/
 ├── videos/
@@ -103,14 +95,16 @@ data/
 └── labels.csv
 
 Attention maps can be frame-level, joint-level, or region-level, depending on the experiment.
+Set `data.doctor_results_path` and `data.skeleton_path` to enable attention maps.
 
 ⸻
 
 3️⃣ Training
 
-python scripts/train.py \
-  experiment=clinicalclip_gait \
-  model=clip_video_attention
+python -m project.main \
+  train.backbone=clip_align \
+  train.attn_map=True \
+  model.clip_backbone=3dcnn
 
 Hydra is used for all configurations.
 
@@ -123,6 +117,15 @@ Supported evaluation settings include:
 	•	Cross-subject validation
 	•	Attention consistency analysis
 	•	Ablation on clinical priors
+
+✅ Baseline & backbone comparisons:
+  - train.backbone=3dcnn / 2dcnn / cnn_lstm / two_stream
+  - CLIP alignment with model.clip_backbone=3dcnn / 2dcnn / cnn_lstm
+
+🔬 CLIP implementation notes:
+  - Video encoder and attention encoder produce embeddings aligned via contrastive loss.
+  - Use model.clip_classifier_source=video/attn/fusion to choose classification head input.
+  - Set loss.clip_weight to balance CLIP alignment vs classification loss.
 
 python scripts/eval.py
 

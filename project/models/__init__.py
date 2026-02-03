@@ -21,3 +21,4 @@ Date 	By 	Comments
 
 from project.models.make_model import *
 from project.models.optical_flow import *
+from project.models.clip_align import *

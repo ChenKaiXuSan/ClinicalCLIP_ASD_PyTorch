@@ -84,10 +84,12 @@ from project.trainer.train_cnn_lstm import CNNLstmModule
 from project.trainer.train_cnn import CNNModule
 # Attention Branch Network
 from project.trainer.train_backbone_atn import BackboneATNModule
+# CLIP-style alignment
+from project.trainer.train_clip_align import CLIPAlignModule
 
 
 from project.cross_validation import DefineCrossValidation
-from project.helper import save_helper
+from project.utils.helper import save_helper
 
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
@@ -126,6 +128,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * compare experiment
     elif hparams.train.backbone == "2dcnn":
         classification_module = CNNModule(hparams)
+    # * CLIP alignment
+    elif hparams.train.backbone == "clip_align":
+        classification_module = CLIPAlignModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")

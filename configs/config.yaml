@@ -9,5 +9,21 @@ hydra:
   job:
     chdir: false 
 
-trian:
+loss:
+  clip_weight: 1.0
+  clip_temperature: 0.07
+
+data:
+  doctor_results_path: ""
+  skeleton_path: ""
+
+model:
+  clip_backbone: "3dcnn"
+  clip_feature_dim: 512
+  clip_embed_dim: 256
+  clip_classifier_source: "video"
+  attn_in_channels: 1
+
+train:
+  backbone: "3dcnn"
   log_path: logs/
