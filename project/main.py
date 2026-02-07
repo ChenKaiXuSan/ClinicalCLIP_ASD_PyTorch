@@ -10,7 +10,7 @@ Comment:
 
 Have a good code time :)
 -----
-Last Modified: Friday November 29th 2024 12:51:51 pm
+Last Modified: Saturday February 7th 2026 9:14:51 pm
 Modified By: the developer formerly known as Kaixu Chen at <chenkaixusan@gmail.com>
 -----
 Copyright (c) 2024 The University of Tsukuba
@@ -19,39 +19,6 @@ HISTORY:
 Date      	By	Comments
 ----------	---	---------------------------------------------------------
 '''
-"""
-File: main.py
-Project: project
-Created Date: 2023-10-19 02:29:35
-Author: chenkaixu
------
-Comment:
- 
-Have a good code time!
------
-Last Modified: Thursday October 19th 2023 2:29:35 am
-Modified By: the developer formerly known as Kaixu Chen at <chenkaixusan@gmail.com>
------
-HISTORY:
-Date 	By 	Comments
-------------------------------------------------
-
-26-11-2024	Kaixu Chen	refactor the code, now run script in python -m project.main
-
-26-11-2024	Kaixu Chen	add attention branch network (ATN) for compare experiment.
-
-23-09-2024	Kaixu Chen	add compare experiment, phasemix with different backbone, like 3dcnn, 2dcnn, cnn_lstm.
-
-25-06-2024	Kaixu Chen	Splitting the backbone and temporal mix was used for more detailed comparison tests
-
-07-06-2024	Kaixu Chen	add two stream compare experiment.
-
-14-05-2024	Kaixu Chen	1. move the train process inside the new folder "trainer" and select based on "experiment" keyword.
-                        2. add the save helper to save the inference results. deplucate the save_inference code in the main.py.
-04-04-2024	Kaixu Chen	add save inference method. now it can save the pred/label to the disk, for the further analysis.
-2023-10-29	KX.C	add the lr monitor, and fast dev run to trainer.
-
-"""
 
 import os
 import logging
@@ -75,19 +42,17 @@ from project.dataloader.data_loader import WalkDataModule
 #####################################
 
 # 3D CNN model
-from project.trainer.train_single import SingleModule
-from project.trainer.train_late_fusion import LateFusionModule
-from project.trainer.train_temporal_mix import TemporalMixModule
+from project.trainer.train_res_3dcnn import SingleModule
 # compare experiment
-from project.trainer.train_two_stream import TwoStreamModule
 from project.trainer.train_cnn_lstm import CNNLstmModule
+# compare experiment
 from project.trainer.train_cnn import CNNModule
-# Attention Branch Network
-from project.trainer.train_backbone_atn import BackboneATNModule
+# CLIP-style alignment
+from project.trainer.train_clip_align import CLIPAlignModule
 
 
 from project.cross_validation import DefineCrossValidation
-from project.helper import save_helper
+from project.utils.helper import save_helper
 
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
@@ -105,27 +70,17 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     seed_everything(42, workers=True)
 
     # * select experiment
-    if hparams.train.backbone == "3dcnn":
-        # * ablation study 2: different training strategy
-        if "late_fusion" in hparams.train.experiment:
-            classification_module = LateFusionModule(hparams)
-        elif "single" in hparams.train.experiment:
-            classification_module = SingleModule(hparams)
-        elif hparams.train.temporal_mix:
-            classification_module = TemporalMixModule(hparams)
-        else:
-            raise ValueError(f"the {hparams.train.experiment} is not supported.")
-    elif hparams.train.backbone == "3dcnn_atn":
-        classification_module = BackboneATNModule(hparams)
+    if hparams.model.backbone == "3dcnn":
+        classification_module = SingleModule(hparams)
     # * compare experiment
-    elif hparams.train.backbone == "two_stream":
-        classification_module = TwoStreamModule(hparams)
-    # * compare experiment
-    elif hparams.train.backbone == "cnn_lstm":
+    elif hparams.model.backbone == "cnn_lstm":
         classification_module = CNNLstmModule(hparams)
     # * compare experiment
-    elif hparams.train.backbone == "2dcnn":
+    elif hparams.model.backbone == "2dcnn":
         classification_module = CNNModule(hparams)
+    # * CLIP alignment
+    elif hparams.model.backbone == "clip_align":
+        classification_module = CLIPAlignModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")
@@ -134,7 +89,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # for the tensorboard
     tb_logger = TensorBoardLogger(
-        save_dir=os.path.join(hparams.train.log_path),
+        save_dir=os.path.join(hparams.log_path),
         name=str(fold),  # here should be str type.
     )
 
@@ -190,19 +145,16 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         # ckpt_path="best",
     )
 
-    # TODO: the save helper for 3dnn_atn not implemented yet.
-    if hparams.train.backbone == "3dcnn_atn":
-        pass
-    else:
-        # save_helper(hparams, classification_module, data_module, fold) #! debug only
-        save_helper(
-            hparams,
-            classification_module.load_from_checkpoint(
-                trainer.checkpoint_callback.best_model_path
-            ),
-            data_module,
-            fold,
-        )
+
+    # save_helper(hparams, classification_module, data_module, fold) #! debug only
+    save_helper(
+        hparams,
+        classification_module.load_from_checkpoint(
+            trainer.checkpoint_callback.best_model_path
+        ),
+        data_module,
+        fold,
+    )
 
 
 @hydra.main(
