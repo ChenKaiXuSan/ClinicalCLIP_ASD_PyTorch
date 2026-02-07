@@ -16,16 +16,12 @@ loss:
 paths:
   root_path: /workspace/data
 
-  dataset_metadata_path: ${paths.root_path}/pose_attn_map_dataset
-  info_path: ${paths.dataset_metadata_path} # deprecated alias; planned removal after 2026-06
   video_path: ${paths.root_path}/segmentation_dataset_512
-  doctor_results_path: "${paths.dataset_metadata_path}/doctor_result"
-  skeleton_path: "${paths.dataset_metadata_path}/seg_skeleton_pkl"
-  index_mapping: "${paths.dataset_metadata_path}/index_mapping"
+  doctor_results_path: "${paths.root_path}/clinical_CLIP_dataset/doctor_results"
+  skeleton_path: "${paths.root_path}/clinical_CLIP_dataset/seg_skeleton_pkl"
+  index_mapping: "${paths.root_path}/clinical_CLIP_dataset/index_mapping"
 
 data:
-  doctor_results_path: ${paths.doctor_results_path} # mirror for dataloader compatibility (expects data.*)
-  skeleton_path: ${paths.skeleton_path} # mirror for dataloader compatibility (expects data.*)
 
   num_workers: 12
   img_size: 224

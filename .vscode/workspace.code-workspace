@@ -2,7 +2,7 @@
 	"folders": [
 		{
 			"name": "code",
-			"path": "/workspace/ClinicalCLIP_ASD_PyTorch"
+			"path": "/workspace/code/ClinicalCLIP_ASD_PyTorch"
 		},
 		{
 			"name": "data",
@@ -10,7 +10,7 @@
 		},
 		{
 			"name": "reference",
-			"path": "/workspace/KnowledgeGuided-ASD_PyTorch"
+			"path": "/workspace/code/ClinicalAttention_ASD_PyTorch"
 		}
 	]
 }

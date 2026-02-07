@@ -5,6 +5,15 @@
       "type": "debugpy",
       "request": "launch",
       "module": "enter-your-module-name"
+    },
+    {
+      "name": "train",
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "/workspace/code/ClinicalCLIP_ASD_PyTorch",
+      "python": "/opt/conda/envs/clip/bin/python",
+      "module": "project.main",
+      "console": "integratedTerminal"
     }
   ]
 }
