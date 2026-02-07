@@ -37,23 +37,26 @@ class_num_mapping_Dict: Dict = {
 
 
 class DefineCrossValidation(object):
-    """process:
-    cross validation > train/val split
-    fold: {'train': [path], 'val': [path]}
-    只建立索引映射，不复制视频文件
+    """Process cross validation for gait analysis dataset.
+    
+    Workflow:
+        1. Cross validation split using StratifiedGroupKFold
+        2. Train/Val split for each fold
+        3. Save index mapping (no video file copying)
+    
+    Returns:
+        fold: {'train': [path], 'val': [path]}
     """
 
     def __init__(self, config) -> None:
 
-        self.video_path: Path = Path(config.data.data_info_path)  # json file path
+        self.video_path: Path = Path(config.paths.data_info_path)  # json file path
         self.gait_seg_idx_path: Path = Path(
-            config.data.index_mapping
+            config.paths.index_mapping
         )  # used for training path mapping
 
         self.K: int = config.train.fold
-        self.sampler: str = config.data.sampling  # data balance, [over, under, none]
-
-        self.class_num: int = config.model.model_class_num
+        self.class_num: int = getattr(config.model, 'model_class_num', 2)
         self.clip_duration: int = config.train.clip_duration
 
     def process_cross_validation(self, video_dict: dict) -> Tuple[List, List, List]:
@@ -78,7 +81,7 @@ class DefineCrossValidation(object):
 
             for p in patient_list:
                 name, _ = p.name.split("-")
-                #  FIXME: 我觉得HipOA是造成数据不平衡的原因，所以我把HipOA的数据去掉了
+                # FIXME: Filter out HipOA to address data imbalance
                 if "HipOA" not in name:
                     name_map.add(name)
 
@@ -93,7 +96,7 @@ class DefineCrossValidation(object):
 
                 label = disease_to_num[disease]
 
-                # FIXME: 我举得HipOA是造成数据不平衡的原因，所以我把HipOA的数据去掉了
+                # FIXME: Filter out HipOA to address data imbalance
                 if "HipOA" not in name:
                     X.append(patient_list[i])  # true path in Path
                     y.append(label)  # label, 0, 1, 2
@@ -158,16 +161,14 @@ class DefineCrossValidation(object):
         return res_dict
 
     def prepare(self):
-        """define cross validation first, with the K.
-        #! the 1 fold and K fold should return the same format.
-        fold: [train/val]: [path]
-
-        Args:
-            video_path (str): the index of the video path, in .json format.
-            K (int, optional): crossed number of validation. Defaults to 5, can be 1 or K.
-
+        """Define K-fold cross validation splits.
+        
         Returns:
-            list: the format like upper.
+            tuple: (ans_fold, X, y, groups)
+                - ans_fold: Dict with fold -> {'train': [paths], 'val': [paths]}
+                - X: List of video paths
+                - y: List of labels
+                - groups: List of patient group indices
         """
         K = self.K
 
@@ -175,10 +176,10 @@ class DefineCrossValidation(object):
 
         mapped_class_Dict = self.map_class_num(self.class_num, self.video_path)
 
-        # define the cross validation
-        # X: video path, in path.Path foramt. len = 1954
-        # y: label, in list format. len = 1954, type defined by class_num_mapping_Dict.
-        # groups: different patient, in list format. It means unique patient index. [54]
+        # Process dataset: extract paths, labels, and patient groups
+        # X: video path in Path format (e.g., len=1954)
+        # y: label list (0, 1, 2, ...) defined by class_num_mapping_Dict
+        # groups: unique patient indices (e.g., 54 patients)
         X, y, groups = self.process_cross_validation(mapped_class_Dict)
 
         sgkf = StratifiedGroupKFold(n_splits=K)
@@ -186,7 +187,7 @@ class DefineCrossValidation(object):
         for i, (train_index, test_index) in enumerate(
             sgkf.split(X=X, y=y, groups=groups)
         ):
-            # 直接使用原始的train/val分割，不进行over/under sampling
+            # Use original train/val split from StratifiedGroupKFold
             train_mapped_path = [X[i] for i in train_index]
             val_mapped_path = [X[i] for i in test_index]
 
@@ -195,7 +196,7 @@ class DefineCrossValidation(object):
                 train_mapped_path, val_mapped_path
             )
 
-            # * 只保存索引映射，不复制视频文件
+            # * Save index mapping only, no video file copying
             ans_fold[i] = {
                 'train': train_mapped_path,
                 'val': val_mapped_path,
@@ -205,9 +206,9 @@ class DefineCrossValidation(object):
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
 
-        target_path = self.gait_seg_idx_path / str(self.class_num) / self.sampler
+        target_path = self.gait_seg_idx_path / str(self.class_num)
 
-        # * when json file changed, need to reprocess the dataset.
+        # * Create index mapping when it doesn't exist or JSON changed
         if not os.path.exists(target_path):
 
             fold_dataset_idx, *_ = self.prepare()
@@ -215,28 +216,22 @@ class DefineCrossValidation(object):
             json_fold_dataset_idx = copy.deepcopy(fold_dataset_idx)
 
             for k, v in fold_dataset_idx.items():
-                # 将Path对象转换为字符串以便JSON序列化
+                # Convert Path objects to strings for JSON serialization
                 json_fold_dataset_idx[k] = {
                     'train': [str(i) for i in v['train']],
                     'val': [str(i) for i in v['val']],
                 }
 
-            with open(
-                (
-                    self.gait_seg_idx_path
-                    / str(self.class_num)
-                    / self.sampler
-                    / "index.json"
-                ),
-                "w",
-            ) as f:
+            os.makedirs(target_path, exist_ok=True)
+            
+            with open(target_path / "index.json", "w") as f:
                 json.dump(json_fold_dataset_idx, f, sort_keys=True, indent=4)
 
         elif os.path.exists(target_path):
             with open(target_path / "index.json", "r") as f:
                 fold_dataset_idx = json.load(f)
 
-            # 将字符串路径转换回Path对象
+            # Convert string paths back to Path objects
             for k, v in fold_dataset_idx.items():
                 fold_dataset_idx[k] = {
                     'train': [Path(i) for i in v['train']],
@@ -245,7 +240,7 @@ class DefineCrossValidation(object):
 
         else:
             raise ValueError(
-                "the gait seg idx path is not exist, please check the path."
+                "The index mapping path does not exist, please check the path."
             )
 
         return fold_dataset_idx

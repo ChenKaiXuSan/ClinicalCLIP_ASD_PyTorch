@@ -42,15 +42,11 @@ from project.dataloader.data_loader import WalkDataModule
 #####################################
 
 # 3D CNN model
-from project.trainer.train_single import SingleModule
-from project.trainer.train_late_fusion import LateFusionModule
-from project.trainer.train_temporal_mix import TemporalMixModule
+from project.trainer.train_res_3dcnn import SingleModule
 # compare experiment
-from project.trainer.train_two_stream import TwoStreamModule
 from project.trainer.train_cnn_lstm import CNNLstmModule
+# compare experiment
 from project.trainer.train_cnn import CNNModule
-# Attention Branch Network
-from project.trainer.train_backbone_atn import BackboneATNModule
 # CLIP-style alignment
 from project.trainer.train_clip_align import CLIPAlignModule
 
@@ -74,29 +70,16 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     seed_everything(42, workers=True)
 
     # * select experiment
-    if hparams.train.backbone == "3dcnn":
-        # * ablation study 2: different training strategy
-        if "late_fusion" in hparams.train.experiment:
-            classification_module = LateFusionModule(hparams)
-        elif "single" in hparams.train.experiment:
-            classification_module = SingleModule(hparams)
-        elif hparams.train.temporal_mix:
-            classification_module = TemporalMixModule(hparams)
-        else:
-            raise ValueError(f"the {hparams.train.experiment} is not supported.")
-    elif hparams.train.backbone == "3dcnn_atn":
-        classification_module = BackboneATNModule(hparams)
+    if hparams.model.backbone == "3dcnn":
+        classification_module = SingleModule(hparams)
     # * compare experiment
-    elif hparams.train.backbone == "two_stream":
-        classification_module = TwoStreamModule(hparams)
-    # * compare experiment
-    elif hparams.train.backbone == "cnn_lstm":
+    elif hparams.model.backbone == "cnn_lstm":
         classification_module = CNNLstmModule(hparams)
     # * compare experiment
-    elif hparams.train.backbone == "2dcnn":
+    elif hparams.model.backbone == "2dcnn":
         classification_module = CNNModule(hparams)
     # * CLIP alignment
-    elif hparams.train.backbone == "clip_align":
+    elif hparams.model.backbone == "clip_align":
         classification_module = CLIPAlignModule(hparams)
 
     else:
@@ -106,7 +89,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # for the tensorboard
     tb_logger = TensorBoardLogger(
-        save_dir=os.path.join(hparams.train.log_path),
+        save_dir=os.path.join(hparams.log_path),
         name=str(fold),  # here should be str type.
     )
 
@@ -162,19 +145,16 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         # ckpt_path="best",
     )
 
-    # TODO: the save helper for 3dnn_atn not implemented yet.
-    if hparams.train.backbone == "3dcnn_atn":
-        pass
-    else:
-        # save_helper(hparams, classification_module, data_module, fold) #! debug only
-        save_helper(
-            hparams,
-            classification_module.load_from_checkpoint(
-                trainer.checkpoint_callback.best_model_path
-            ),
-            data_module,
-            fold,
-        )
+
+    # save_helper(hparams, classification_module, data_module, fold) #! debug only
+    save_helper(
+        hparams,
+        classification_module.load_from_checkpoint(
+            trainer.checkpoint_callback.best_model_path
+        ),
+        data_module,
+        fold,
+    )
 
 
 @hydra.main(

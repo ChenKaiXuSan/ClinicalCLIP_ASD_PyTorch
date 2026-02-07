@@ -17,9 +17,13 @@ paths:
   root_path: /workspace/data
 
   video_path: ${paths.root_path}/segmentation_dataset_512
-  doctor_results_path: "${paths.root_path}/clinical_CLIP_dataset/doctor_results"
-  skeleton_path: "${paths.root_path}/clinical_CLIP_dataset/seg_skeleton_pkl"
-  index_mapping: "${paths.root_path}/clinical_CLIP_dataset/index_mapping"
+  info_path: ${paths.root_path}/clinical_CLIP_dataset
+
+  data_info_path: "${paths.info_path}/json_mix"
+  doctor_results_path: "${paths.info_path}/doctor_result"
+  skeleton_path: "${paths.info_path}/seg_skeleton_pkl"
+
+  index_mapping: "${paths.info_path}/index_mapping"
 
 data:
 
@@ -29,7 +33,10 @@ data:
   batch_size: 1 # this used for default method, without gait cycle defined method.
 
 model:
-  clip_backbone: "3dcnn"
+  backbone: "3dcnn"
+  model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
+  model_depth: 50 # ResNet depth for 3D CNN
+  model: "resnet" # model architecture name
   clip_feature_dim: 512
   clip_embed_dim: 256
   clip_classifier_source: "video"
@@ -46,14 +53,17 @@ train:
   clip_duration: 1 # clip duration for the video
   uniform_temporal_subsample_num: 8 # num frame from the clip duration, f or define one gait cycle, we need use whole frames.
 
+  transfer_learning: True # use pretrained weights (e.g., Kinetics-400)
   attn_map: True # if use the attention map
 
-  experiment: ${model.backbone}_attn_map_${train.attn_map}_${model.fuse_method}_${model.ablation_study}_${model.fusion_layers} # the experiment name, used for log path
+  experiment: ${model.backbone}_attn_map_${train.attn_map} # the experiment name, used for log path
 
-  gpu: 0 # choices=[0, 1], help='the gpu number whicht to train'
-
-
+  gpu_num: 0 # GPU device number
+  
   fast_dev_run: False # if use the fast_dev_run
   fold: 5 # the fold number of the cross validation
+
+optimizer:
+  lr: 0.0001 # learning rate
 
 log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}

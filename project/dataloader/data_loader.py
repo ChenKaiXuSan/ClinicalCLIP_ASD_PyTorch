@@ -41,8 +41,8 @@ class WalkDataModule(LightningDataModule):
         self.uniform_temporal_subsample_num = opt.train.uniform_temporal_subsample_num
 
         self._dataset_idx = dataset_idx
-        self._doctor_res_path = opt.data.doctor_results_path
-        self._skeleton_path = opt.data.skeleton_path
+        self._doctor_res_path = opt.paths.doctor_results_path
+        self._skeleton_path = opt.paths.skeleton_path
         self._class_num = opt.model.model_class_num
         self._experiment = opt.train.experiment
         self._attn_map = opt.train.attn_map
@@ -96,7 +96,7 @@ class WalkDataModule(LightningDataModule):
         if self._attn_map:
             self.train_gait_dataset = whole_video_dataset(
                 experiment=self._experiment,
-                dataset_idx=self._dataset_idx[0],
+                dataset_idx=self._dataset_idx['train'],
                 transform=self.mapping_transform,
                 skeleton_path=self._skeleton_path,
                 doctor_res_path=self._doctor_res_path,
@@ -105,7 +105,7 @@ class WalkDataModule(LightningDataModule):
 
             self.val_gait_dataset = whole_video_dataset(
                 experiment=self._experiment,
-                dataset_idx=self._dataset_idx[1],
+                dataset_idx=self._dataset_idx['val'],
                 transform=self.mapping_transform,
                 doctor_res_path=self._doctor_res_path,
                 skeleton_path=self._skeleton_path,
@@ -114,7 +114,7 @@ class WalkDataModule(LightningDataModule):
 
             self.test_gait_dataset = whole_video_dataset(
                 experiment=self._experiment,
-                dataset_idx=self._dataset_idx[1],
+                dataset_idx=self._dataset_idx['val'],
                 transform=self.mapping_transform,
                 doctor_res_path=self._doctor_res_path,
                 skeleton_path=self._skeleton_path,
@@ -123,19 +123,19 @@ class WalkDataModule(LightningDataModule):
 
         else:
             self.train_gait_dataset = labeled_video_dataset(
-                data_path=self._dataset_idx[2],
+                data_path=self._dataset_idx['train'],
                 clip_sampler=make_clip_sampler("uniform", self._clip_duration),
                 transform=self.train_video_transform,
             )
 
             self.val_gait_dataset = labeled_video_dataset(
-                data_path=self._dataset_idx[3],
+                data_path=self._dataset_idx['val'],
                 clip_sampler=make_clip_sampler("uniform", self._clip_duration),
                 transform=self.val_video_transform,
             )
 
             self.test_gait_dataset = labeled_video_dataset(
-                data_path=self._dataset_idx[3],
+                data_path=self._dataset_idx['test'],
                 clip_sampler=make_clip_sampler("uniform", self._clip_duration),
                 transform=self.val_video_transform,
             )
