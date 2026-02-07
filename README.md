@@ -126,6 +126,8 @@ Supported evaluation settings include:
   - Video encoder and attention encoder produce embeddings aligned via contrastive loss.
   - Use model.clip_classifier_source=video/attn/fusion to choose classification head input.
   - Set loss.clip_weight to balance CLIP alignment vs classification loss.
+  - Enable map-guided gating with model.map_guided=true to condition video features on clinician attention.
+  - For channel gating, adjust model.map_guided_hidden_dim and map_guided_type=channel.
 
 python scripts/eval.py
 
