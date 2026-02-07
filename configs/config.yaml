@@ -2,9 +2,9 @@
 # hydra config
 hydra:
   run:
-    dir: ${train.log_path}
+    dir: ${log_path}
   sweep:
-    dir: ${train.log_path}
+    dir: ${log_path}
     subdir: ${train.experiment}/${train.clip_duration}_${train.uniform_temporal_subsample_num}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   job:
     chdir: false 
@@ -13,9 +13,19 @@ loss:
   clip_weight: 1.0
   clip_temperature: 0.07
 
+paths:
+  root_path: /workspace/data
+
+  video_path: ${paths.root_path}/segmentation_dataset_512
+  doctor_results_path: "${paths.info_path}/doctor_result"
+  index_mapping: "${paths.info_path}/index_mapping"
+
 data:
-  doctor_results_path: ""
-  skeleton_path: ""
+
+  num_workers: 12
+  img_size: 224
+
+  batch_size: 1 # this used for default method, without gait cycle defined method.
 
 model:
   clip_backbone: "3dcnn"
@@ -25,5 +35,21 @@ model:
   attn_in_channels: 1
 
 train:
-  backbone: "3dcnn"
-  log_path: logs/
+  # Training config
+  max_epochs: 50 # numer of epochs of training
+
+  # used for val
+  clip_duration: 1 # clip duration for the video
+  uniform_temporal_subsample_num: 8 # num frame from the clip duration, f or define one gait cycle, we need use whole frames.
+
+  attn_map: True # if use the attention map
+
+  experiment: ${model.backbone}_attn_map_${train.attn_map}_${model.fuse_method}_${model.ablation_study}_${model.fusion_layers} # the experiment name, used for log path
+
+  gpu: 0 # choices=[0, 1], help='the gpu number whicht to train'
+
+
+  fast_dev_run: False # if use the fast_dev_run
+  fold: 5 # the fold number of the cross validation
+
+log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}
