@@ -13,16 +13,19 @@ if [[ -n "$PBS_O_WORKDIR" ]]; then
   cd "$PBS_O_WORKDIR"
 fi
 
+# === 切换到作业提交目录 ===
+cd /work/SSR/share/code/ClinicalCLIP_ASD_PyTorch
+
 mkdir -p logs/pegasus
 
-source activate /home/SSR/luoxi/miniconda3/envs/multiview-video-cls
+source activate  /home/SSR/luoxi/miniconda3/envs/clip
 
 echo "Current working directory: $(pwd)"
 echo "Current Python: $(which python)"
 
-ROOT_PATH=""
-VIDEO_PATH=""
-INFO_PATH=""
+ROOT_PATH="/work/SSR/share/data/asd_dataset"
+VIDEO_PATH="/work/SSR/share/data/asd_dataset/segmentation_dataset_512"
+INFO_PATH="/work/SSR/share/data/asd_dataset/clinical_CLIP_dataset"
 
 EXP_NAMES=(
   "B1_clip_only"

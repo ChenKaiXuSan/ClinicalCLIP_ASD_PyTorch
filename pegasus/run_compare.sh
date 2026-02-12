@@ -2,7 +2,7 @@
 #PBS -A SSR
 #PBS -q gpu
 #PBS -l elapstim_req=24:00:00
-#PBS -N clip_ablation
+#PBS -N clip_compare
 #PBS -t 0-6
 #PBS -o logs/pegasus/run_compare.log
 #PBS -e logs/pegasus/run_compare_err.log
@@ -14,18 +14,20 @@ if [[ -n "$PBS_O_WORKDIR" ]]; then
 	cd "$PBS_O_WORKDIR"
 fi
 
+# === 切换到作业提交目录 ===
+cd /work/SSR/share/code/ClinicalCLIP_ASD_PyTorch
 mkdir -p logs/pegasus
 
 # Activate conda environment (edit if needed)
-source activate /home/SSR/luoxi/miniconda3/envs/multiview-video-cls
+source activate /home/SSR/luoxi/miniconda3/envs/clip
 
 echo "Current working directory: $(pwd)"
 echo "Current Python: $(which python)"
 
 # Optional overrides (edit for your cluster)
-ROOT_PATH=""
-VIDEO_PATH=""
-INFO_PATH=""
+ROOT_PATH="/work/SSR/share/data/asd_dataset"
+VIDEO_PATH="/work/SSR/share/data/asd_dataset/segmentation_dataset_512"
+INFO_PATH="/work/SSR/share/data/asd_dataset/clinical_CLIP_dataset"
 
 # Experiment mapping (PBS array id -> experiment)
 EXP_NAMES=(
