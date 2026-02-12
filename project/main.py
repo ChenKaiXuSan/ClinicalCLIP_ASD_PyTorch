@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
-'''
+"""
 File: /workspace/deep-learning-project-template/project/main.py
 Project: /workspace/deep-learning-project-template/project
 Created Date: Friday November 29th 2024
@@ -10,7 +10,7 @@ Comment:
 
 Have a good code time :)
 -----
-Last Modified: Saturday February 7th 2026 9:14:51 pm
+Last Modified: Saturday February 7th 2026 10:51:24 pm
 Modified By: the developer formerly known as Kaixu Chen at <chenkaixusan@gmail.com>
 -----
 Copyright (c) 2024 The University of Tsukuba
@@ -18,41 +18,40 @@ Copyright (c) 2024 The University of Tsukuba
 HISTORY:
 Date      	By	Comments
 ----------	---	---------------------------------------------------------
-'''
+"""
 
-import os
 import logging
+import os
+
 import hydra
 from omegaconf import DictConfig
-
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import (
-    TQDMProgressBar,
-    RichModelSummary,
-    ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
+    ModelCheckpoint,
+    RichModelSummary,
+    TQDMProgressBar,
 )
+from pytorch_lightning.loggers import TensorBoardLogger
 
+from project.cross_validation import DefineCrossValidation
 from project.dataloader.data_loader import WalkDataModule
 
-#####################################
-# select different experiment trainer 
-#####################################
-
-# 3D CNN model
-from project.trainer.train_res_3dcnn import SingleModule
-# compare experiment
-from project.trainer.train_cnn_lstm import CNNLstmModule
-# compare experiment
-from project.trainer.train_cnn import CNNModule
 # CLIP-style alignment
 from project.trainer.train_clip_align import CLIPAlignModule
 
+# compare experiment
+from project.trainer.train_cnn import CNNModule
 
-from project.cross_validation import DefineCrossValidation
-from project.utils.helper import save_helper
+# compare experiment
+from project.trainer.train_cnn_lstm import CNNLstmModule
+
+#####################################
+# select different experiment trainer
+#####################################
+# 3D CNN model
+from project.trainer.train_res_3dcnn import SingleModule
 
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
@@ -79,7 +78,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     elif hparams.model.backbone == "2dcnn":
         classification_module = CNNModule(hparams)
     # * CLIP alignment
-    elif hparams.model.backbone == "clip_align":
+    elif hparams.model.backbone == "clip":
         classification_module = CLIPAlignModule(hparams)
 
     else:
@@ -122,8 +121,6 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         ],
         accelerator="gpu",
         max_epochs=hparams.train.max_epochs,
-        # limit_train_batches=2,
-        # limit_val_batches=2,
         logger=tb_logger,  # wandb_logger,
         check_val_every_n_epoch=1,
         callbacks=[
@@ -133,33 +130,25 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
             early_stopping,
             lr_monitor,
         ],
-        fast_dev_run=hparams.train.fast_dev_run,  # if use fast dev run for debug.
+        limit_train_batches=2,
+        limit_val_batches=2,
+        limit_test_batches=2,
     )
 
-    # trainer.fit(classification_module, data_module)
+    trainer.fit(classification_module, data_module)
 
     # the validate method will wirte in the same log twice, so use the test method.
     trainer.test(
         classification_module,
         data_module,
-        # ckpt_path="best",
-    )
-
-
-    # save_helper(hparams, classification_module, data_module, fold) #! debug only
-    save_helper(
-        hparams,
-        classification_module.load_from_checkpoint(
-            trainer.checkpoint_callback.best_model_path
-        ),
-        data_module,
-        fold,
+        ckpt_path="best",
+        weights_only=False,
     )
 
 
 @hydra.main(
     version_base=None,
-    config_path="../configs", # * the config_path is relative to location of the python script
+    config_path="../configs",  # * the config_path is relative to location of the python script
     config_name="config.yaml",
 )
 def init_params(config):
@@ -195,6 +184,5 @@ def init_params(config):
 
 
 if __name__ == "__main__":
-
     os.environ["HYDRA_FULL_ERROR"] = "1"
     init_params()

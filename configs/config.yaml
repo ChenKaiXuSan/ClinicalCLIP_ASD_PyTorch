@@ -7,7 +7,7 @@ hydra:
     dir: ${log_path}
     subdir: ${train.experiment}/${train.clip_duration}_${train.uniform_temporal_subsample_num}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   job:
-    chdir: false 
+    chdir: false
 
 loss:
   clip_weight: 1.0
@@ -17,33 +17,37 @@ paths:
   root_path: /workspace/data
 
   video_path: ${paths.root_path}/segmentation_dataset_512
+
   info_path: ${paths.root_path}/clinical_CLIP_dataset
 
   data_info_path: "${paths.info_path}/json_mix"
   doctor_results_path: "${paths.info_path}/doctor_result"
   skeleton_path: "${paths.info_path}/seg_skeleton_pkl"
-
   index_mapping: "${paths.info_path}/index_mapping"
 
 data:
-
   num_workers: 12
   img_size: 224
 
-  batch_size: 1 # this used for default method, without gait cycle defined method.
+  batch_size: 4 # this used for default method, without gait cycle defined method.
 
 model:
-  backbone: "3dcnn"
+  backbone: "clip"
   model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
   model_depth: 50 # ResNet depth for 3D CNN
   model: "resnet" # model architecture name
+
   clip_feature_dim: 512
   clip_embed_dim: 256
   clip_classifier_source: "video"
+  clip_init_temperature: 0.07
   attn_in_channels: 1
   map_guided: false
-  map_guided_type: "channel"
+  map_guided_type: "spatiotemporal" # spatiotemporal | channel | weighted_pool
   map_guided_hidden_dim: 64
+  map_guided_alpha: 1.0
+  map_guided_sigmoid_gate: false
+  lambda_token: 0.0
 
 train:
   # Training config
@@ -53,14 +57,12 @@ train:
   clip_duration: 1 # clip duration for the video
   uniform_temporal_subsample_num: 8 # num frame from the clip duration, f or define one gait cycle, we need use whole frames.
 
-  transfer_learning: True # use pretrained weights (e.g., Kinetics-400)
   attn_map: True # if use the attention map
 
   experiment: ${model.backbone}_attn_map_${train.attn_map} # the experiment name, used for log path
 
   gpu_num: 0 # GPU device number
-  
-  fast_dev_run: False # if use the fast_dev_run
+
   fold: 5 # the fold number of the cross validation
 
 optimizer:
