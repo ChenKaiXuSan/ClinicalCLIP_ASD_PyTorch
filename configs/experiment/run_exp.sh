@@ -9,7 +9,15 @@
 #   ./run_exp.sh B1 B2 B3     # Run specific experiments
 #
 
-set -e
+set +e
+
+finish() {
+    local code="$1"
+    if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+        return "$code"
+    fi
+    exit "$code"
+}
 
 # Always run from project root
 cd /workspace/code/ClinicalCLIP_ASD_PyTorch
@@ -37,7 +45,7 @@ if [[ $# -eq 0 ]]; then
     echo "  ./run_exp.sh C                      # Run C1-C3"
     echo "  ./run_exp.sh D                      # Run D"
     echo "  ./run_exp.sh B1 B2                  # Run specific experiments"
-    exit 1
+    finish 1
 fi
 
 for arg in "$@"; do
@@ -65,7 +73,7 @@ for arg in "$@"; do
             ;;
         *)
             echo "Unknown experiment: $arg"
-            exit 1
+            finish 1
             ;;
     esac
 done
@@ -151,8 +159,4 @@ fi
 echo ""
 echo "Total time: $((ELAPSED / 60))m $((ELAPSED % 60))s"
 
-if [[ ${#FAILED[@]} -gt 0 ]]; then
-    exit 1
-fi
-
-exit 0
+finish 0
