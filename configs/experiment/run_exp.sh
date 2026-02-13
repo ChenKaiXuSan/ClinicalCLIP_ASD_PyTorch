@@ -84,10 +84,38 @@ PASSED=()
 
 for exp in "${EXPERIMENTS[@]}"; do
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] Running: ${exp}${NC}"
-    echo "Command: python -m project.main experiment=${exp}"
+    OVERRIDES=()
+    case "$exp" in
+        B1_clip_only)
+            OVERRIDES+=("model.map_guided=false" "loss.clip_weight=1.0" "model.lambda_token=0.0")
+            ;;
+        B2_map_only)
+            OVERRIDES+=("loss.clip_weight=0" "model.lambda_token=0.0" "model.map_guided=true" "model.map_guided_type=spatiotemporal")
+            ;;
+        B3_full)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.lambda_token=0.0" "model.map_guided=true" "model.map_guided_type=spatiotemporal")
+            ;;
+        B4_full_token)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.lambda_token=0.1" "model.map_guided=true" "model.map_guided_type=spatiotemporal" "model.map_guided_token=true")
+            ;;
+        C1_channel_gate)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=channel" "model.map_guided_channel_gate=true")
+            ;;
+        C2_weighted_pool)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=weighted_pool" "model.map_guided_weighted_pool=true")
+            ;;
+        C3_sigmoid_gate)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_sigmoid_gate=true" "model.map_guided_type=spatiotemporal")
+            ;;
+        D_retrieval)
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided=true" "model.map_guided_type=spatiotemporal" "model.map_guided_retrieval=true")
+            ;;
+    esac
+
+    echo "Command: python -m project.main ${OVERRIDES[*]}"
     echo ""
     
-    if python -m project.main experiment="${exp}"; then
+    if python -m project.main "${OVERRIDES[@]}"; then
         PASSED+=("$exp")
         echo -e "${GREEN}✓ ${exp} completed${NC}"
     else

@@ -10,6 +10,3 @@ model:
 
 loss:
   clip_weight: 1.0
-
-train:
-  experiment: D_retrieval

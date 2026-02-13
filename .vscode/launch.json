@@ -13,7 +13,11 @@
       "cwd": "/workspace/code/ClinicalCLIP_ASD_PyTorch",
       "python": "/opt/conda/envs/clip/bin/python",
       "module": "project.main",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "args": [
+        "experiment=B1_clip_only",
+        "train.gpu_num=1"
+      ]
     }
   ]
 }

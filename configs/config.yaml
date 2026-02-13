@@ -1,8 +1,3 @@
-# * this method should use python -m to make sure the hydra config is loaded correctly
-
-defaults:
-  - experiment: B3_full  # Default: full method. Override with experiment=B1/B2/C1/etc.
-
 # hydra config
 hydra:
   run:
@@ -33,20 +28,23 @@ data:
   num_workers: 12
   img_size: 224
 
-  batch_size: 4 # this used for default method, without gait cycle defined method.
+  batch_size: 1 # batch size per GPU
 
 model:
   backbone: "clip"
-  model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
-  model_depth: 50 # ResNet depth for 3D CNN
   model: "resnet" # model architecture name
+  model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
+  clip_backbone_depth: 50 # ResNet depth for 3D CNN
+  clip_backbone_pretrained: true
+  attn_backbone_pretrained: false
 
   clip_feature_dim: 512
   clip_embed_dim: 256
-  clip_classifier_source: "video"
+  clip_classifier_source: "video" # video | attn | fusion 在分类头之前的特征来源
   clip_init_temperature: 0.07
   attn_in_channels: 1
-  map_guided: false
+
+  map_guided: true
   map_guided_type: "spatiotemporal" # spatiotemporal | channel | weighted_pool
   map_guided_hidden_dim: 64
   map_guided_alpha: 1.0
@@ -63,7 +61,7 @@ train:
 
   attn_map: True # if use the attention map
 
-  experiment: ${model.backbone}_attn_map_${train.attn_map} # the experiment name, used for log path
+  experiment: ${oc.select:hydra.runtime.choices.experiment,manual} # fallback for direct CLI overrides
 
   gpu_num: 0 # GPU device number
 

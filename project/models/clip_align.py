@@ -31,6 +31,7 @@ from typing import Literal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pytorchvideo.models import resnet as pv_resnet
 
 
 # -----------------------------
@@ -71,46 +72,115 @@ def downsample_attn_to_tokens(attn_map: torch.Tensor, tokens: torch.Tensor) -> t
 # -----------------------------
 # Encoders
 # -----------------------------
-class Simple3DEncoder(nn.Module):
-    """Global 3D encoder -> (B, feature_dim)."""
+def _patch_stem_conv(model: nn.Module, in_channels: int, pretrained: bool) -> None:
+    if not hasattr(model, "blocks"):
+        return
 
-    def __init__(self, in_channels: int, feature_dim: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv3d(in_channels, 32, kernel_size=3, padding=1),
-            nn.BatchNorm3d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool3d(kernel_size=2, stride=2),
-            nn.Conv3d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm3d(64),
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool3d((1, 1, 1)),
+    stem = model.blocks[0]
+    if not hasattr(stem, "conv"):
+        return
+
+    old_conv = stem.conv
+    if old_conv.in_channels == in_channels:
+        return
+
+    new_conv = nn.Conv3d(
+        in_channels,
+        old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=False,
+    )
+
+    if pretrained:
+        with torch.no_grad():
+            avg_weight = old_conv.weight.mean(dim=1, keepdim=True)
+            new_weight = avg_weight.repeat(1, in_channels, 1, 1, 1)
+            new_conv.weight.copy_(new_weight)
+
+    stem.conv = new_conv
+
+
+def _build_resnet3d_backbone(
+    depth: int,
+    in_channels: int,
+    pretrained: bool,
+) -> tuple[nn.Module, int]:
+    if pretrained:
+        if depth == 50:
+            model = torch.hub.load("facebookresearch/pytorchvideo", "slow_r50", pretrained=True)
+        elif depth == 101:
+            model = torch.hub.load("facebookresearch/pytorchvideo", "slow_r101", pretrained=True)
+        else:
+            raise ValueError(
+                "Pretrained ResNet3D only supports depth 50 or 101 in this setup."
+            )
+    else:
+        model = pv_resnet.create_resnet(
+            input_channel=in_channels,
+            model_depth=depth,
+            model_num_class=400,
+            norm=nn.BatchNorm3d,
+            activation=nn.ReLU,
         )
-        self.fc = nn.Linear(64, feature_dim)
+
+    _patch_stem_conv(model, in_channels, pretrained)
+
+    if hasattr(model, "blocks") and len(model.blocks) > 0:
+        model.blocks[-1] = nn.Identity()
+
+    token_dim = 2048 if depth >= 50 else 512
+    return model, token_dim
+
+
+class ResNet3DEncoder(nn.Module):
+    """ResNet3D encoder -> (B, feature_dim)."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        feature_dim: int,
+        backbone_depth: int = 50,
+        pretrained: bool = True,
+    ) -> None:
+        super().__init__()
+        self.backbone, token_dim = _build_resnet3d_backbone(
+            depth=backbone_depth,
+            in_channels=in_channels,
+            pretrained=pretrained,
+        )
+        self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.fc = nn.Linear(token_dim, feature_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.net(x)
+        x = self.backbone(x)
+        x = self.pool(x)
         x = x.flatten(1)
         return self.fc(x)
 
 
-class Simple3DTokenEncoder(nn.Module):
-    """3D encoder that returns token volume (B, D, T', H', W')."""
+class ResNet3DTokenEncoder(nn.Module):
+    """ResNet3D token encoder -> (B, D, T', H', W')."""
 
-    def __init__(self, in_channels: int, hidden_dim: int = 64) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        hidden_dim: int = 64,
+        backbone_depth: int = 50,
+        pretrained: bool = True,
+    ) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv3d(in_channels, 32, kernel_size=3, padding=1),
-            nn.BatchNorm3d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool3d(kernel_size=2, stride=2),  # -> (T/2,H/2,W/2)
-            nn.Conv3d(32, hidden_dim, kernel_size=3, padding=1),
-            nn.BatchNorm3d(hidden_dim),
-            nn.ReLU(inplace=True),
+        self.backbone, token_dim = _build_resnet3d_backbone(
+            depth=backbone_depth,
+            in_channels=in_channels,
+            pretrained=pretrained,
         )
+        self.token_proj = nn.Conv3d(token_dim, hidden_dim, kernel_size=1, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        tokens = self.backbone(x)
+        return self.token_proj(tokens)
 
 
 class FrameEncoder(nn.Module):
@@ -193,9 +263,16 @@ class SpatiotemporalMapGuidedVideoEncoder(nn.Module):
         hidden_dim: int = 64,
         init_alpha: float = 1.0,
         use_sigmoid_gate: bool = False,
+        backbone_depth: int = 50,
+        pretrained: bool = True,
     ) -> None:
         super().__init__()
-        self.backbone = Simple3DTokenEncoder(in_channels, hidden_dim)
+        self.backbone = ResNet3DTokenEncoder(
+            in_channels,
+            hidden_dim,
+            backbone_depth=backbone_depth,
+            pretrained=pretrained,
+        )
 
         # Learnable strength of map-guidance
         self.alpha = nn.Parameter(torch.tensor(float(init_alpha)))
@@ -251,9 +328,16 @@ class ChannelMapGuidedVideoEncoder(nn.Module):
         in_channels: int,
         feature_dim: int,
         hidden_dim: int = 64,
+        backbone_depth: int = 50,
+        pretrained: bool = True,
     ) -> None:
         super().__init__()
-        self.backbone = Simple3DTokenEncoder(in_channels, hidden_dim)
+        self.backbone = ResNet3DTokenEncoder(
+            in_channels,
+            hidden_dim,
+            backbone_depth=backbone_depth,
+            pretrained=pretrained,
+        )
         self.gate_mlp = nn.Sequential(
             nn.Linear(1, hidden_dim),
             nn.ReLU(inplace=True),
@@ -292,9 +376,16 @@ class WeightedPoolVideoEncoder(nn.Module):
         in_channels: int,
         feature_dim: int,
         hidden_dim: int = 64,
+        backbone_depth: int = 50,
+        pretrained: bool = True,
     ) -> None:
         super().__init__()
-        self.backbone = Simple3DTokenEncoder(in_channels, hidden_dim)
+        self.backbone = ResNet3DTokenEncoder(
+            in_channels,
+            hidden_dim,
+            backbone_depth=backbone_depth,
+            pretrained=pretrained,
+        )
         self.fc = nn.Linear(hidden_dim, feature_dim)
 
     def forward(
@@ -402,6 +493,13 @@ class VideoAttentionCLIP(nn.Module):
 
         self.attn_in_channels = int(getattr(hparams.model, "attn_in_channels", 1))
         self.clip_backbone = getattr(hparams.model, "clip_backbone", "3dcnn")
+        self.clip_backbone_depth = int(getattr(hparams.model, "clip_backbone_depth", 50))
+        self.clip_backbone_pretrained = bool(
+            getattr(hparams.model, "clip_backbone_pretrained", True)
+        )
+        self.attn_backbone_pretrained = bool(
+            getattr(hparams.model, "attn_backbone_pretrained", False)
+        )
 
         # Map-guided toggles
         self.map_guided = bool(getattr(hparams.model, "map_guided", True))
@@ -422,12 +520,16 @@ class VideoAttentionCLIP(nn.Module):
                     in_channels=3,
                     feature_dim=self.feature_dim,
                     hidden_dim=self.map_guided_hidden_dim,
+                    backbone_depth=self.clip_backbone_depth,
+                    pretrained=self.clip_backbone_pretrained,
                 )
             elif self.map_guided_type == "weighted_pool":
                 self.video_encoder = WeightedPoolVideoEncoder(
                     in_channels=3,
                     feature_dim=self.feature_dim,
                     hidden_dim=self.map_guided_hidden_dim,
+                    backbone_depth=self.clip_backbone_depth,
+                    pretrained=self.clip_backbone_pretrained,
                 )
             else:
                 self.video_encoder = SpatiotemporalMapGuidedVideoEncoder(
@@ -436,12 +538,24 @@ class VideoAttentionCLIP(nn.Module):
                     hidden_dim=self.map_guided_hidden_dim,
                     init_alpha=self.map_guided_alpha,
                     use_sigmoid_gate=self.map_guided_sigmoid_gate,
+                    backbone_depth=self.clip_backbone_depth,
+                    pretrained=self.clip_backbone_pretrained,
                 )
         else:
-            self.video_encoder = self._build_encoder(self.clip_backbone, in_channels=3)
+            self.video_encoder = self._build_encoder(
+                self.clip_backbone,
+                in_channels=3,
+                backbone_depth=self.clip_backbone_depth,
+                pretrained=self.clip_backbone_pretrained,
+            )
 
         # Attention-map encoder (treat map as a 3D volume)
-        self.attn_encoder = Simple3DEncoder(self.attn_in_channels, self.feature_dim)
+        self.attn_encoder = ResNet3DEncoder(
+            self.attn_in_channels,
+            self.feature_dim,
+            backbone_depth=self.clip_backbone_depth,
+            pretrained=self.attn_backbone_pretrained,
+        )
 
         # Projection heads
         self.video_projection = ClipProjectionHead(self.feature_dim, self.embed_dim)
@@ -454,12 +568,23 @@ class VideoAttentionCLIP(nn.Module):
         init_temp = float(getattr(hparams.model, "clip_init_temperature", 0.07))
         self.logit_scale = nn.Parameter(torch.ones([]) * math.log(1.0 / init_temp))
 
-    def _build_encoder(self, backbone: str, in_channels: int) -> nn.Module:
+    def _build_encoder(
+        self,
+        backbone: str,
+        in_channels: int,
+        backbone_depth: int,
+        pretrained: bool,
+    ) -> nn.Module:
         if backbone == "2dcnn":
             return Simple2DEncoder(in_channels, self.feature_dim)
         if backbone == "cnn_lstm":
             return SimpleCNNLSTMEncoder(in_channels, self.feature_dim)
-        return Simple3DEncoder(in_channels, self.feature_dim)
+        return ResNet3DEncoder(
+            in_channels,
+            self.feature_dim,
+            backbone_depth=backbone_depth,
+            pretrained=pretrained,
+        )
 
     def forward(
         self,

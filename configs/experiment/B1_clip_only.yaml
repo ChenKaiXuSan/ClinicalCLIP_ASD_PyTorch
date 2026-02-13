@@ -8,6 +8,3 @@ model:
 
 loss:
   clip_weight: 1.0
-
-train:
-  experiment: B1_clip_only
