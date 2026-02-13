@@ -1,4 +1,8 @@
 # * this method should use python -m to make sure the hydra config is loaded correctly
+
+defaults:
+  - experiment: B3_full  # Default: full method. Override with experiment=B1/B2/C1/etc.
+
 # hydra config
 hydra:
   run:

@@ -1,0 +1,14 @@
+# B3: Full method (map-guided pooling + CLIP)
+# Goal: show guided pooling and CLIP alignment are complementary
+# Expected: best performance, demonstrates synergy
+
+model:
+  map_guided: true
+  map_guided_type: spatiotemporal
+  lambda_token: 0
+
+loss:
+  clip_weight: 1.0
+
+train:
+  experiment: B3_full

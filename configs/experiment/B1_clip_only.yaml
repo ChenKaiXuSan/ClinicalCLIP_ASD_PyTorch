@@ -1,0 +1,13 @@
+# B1: CLIP alignment only (no map-guided pooling)
+# Goal: test if alignment loss helps without guidance
+# Expected: lower than B3 but should show alignment benefit
+
+model:
+  map_guided: false
+  lambda_token: 0
+
+loss:
+  clip_weight: 1.0
+
+train:
+  experiment: B1_clip_only

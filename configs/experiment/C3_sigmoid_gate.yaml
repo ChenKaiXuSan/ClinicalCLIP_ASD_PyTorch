@@ -1,0 +1,15 @@
+# C3: Sigmoid gate vs linear gate
+# Goal: assess sensitivity to attention noise and scale
+# Expected: similar to B3 with linear gate, shows robustness
+
+model:
+  map_guided: true
+  map_guided_type: spatiotemporal
+  map_guided_sigmoid_gate: true
+  lambda_token: 0
+
+loss:
+  clip_weight: 1.0
+
+train:
+  experiment: C3_sigmoid_gate

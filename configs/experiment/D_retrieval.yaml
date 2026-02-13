@@ -1,0 +1,15 @@
+# D: Cross-modal retrieval & alignment validation
+# Goal: verify CLIP learns clinician semantics
+# Metrics: R@1/R@5 (video->attn, attn->video), alignment sim gap, correlation
+# Expected: high R@K and positive correlation with correctness
+
+model:
+  map_guided: true
+  map_guided_type: spatiotemporal
+  lambda_token: 0
+
+loss:
+  clip_weight: 1.0
+
+train:
+  experiment: D_retrieval

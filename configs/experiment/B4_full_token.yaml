@@ -1,0 +1,14 @@
+# B4: Full method + token-level loss
+# Goal: improve interpretability and stability
+# Expected: similar or better than B3, higher R@K, better correlation
+
+model:
+  map_guided: true
+  map_guided_type: spatiotemporal
+  lambda_token: 0.1
+
+loss:
+  clip_weight: 1.0
+
+train:
+  experiment: B4_full_token

@@ -1,0 +1,14 @@
+# B2: Map-guided pooling only (no CLIP)
+# Goal: test the benefit of guided pooling alone
+# Expected: should show improvement over B1 due to clinical guidance
+
+model:
+  map_guided: true
+  map_guided_type: spatiotemporal
+  lambda_token: 0
+
+loss:
+  clip_weight: 0
+
+train:
+  experiment: B2_map_only
