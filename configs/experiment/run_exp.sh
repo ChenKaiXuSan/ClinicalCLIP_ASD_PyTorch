@@ -5,7 +5,6 @@
 #   ./run_exp.sh all          # Run all experiments (B1-B4, C1-C3, D)
 #   ./run_exp.sh B            # Run B-series only (B1-B4)
 #   ./run_exp.sh C            # Run C-series only (C1-C3)
-#   ./run_exp.sh D            # Run D-series only
 #   ./run_exp.sh B1 B2 B3     # Run specific experiments
 #
 
@@ -31,7 +30,6 @@ NC='\033[0m' # No Color
 # All experiments
 ALL_B=("B1_clip_only" "B2_map_only" "B3_full" "B4_full_token")
 ALL_C=("C1_channel_gate" "C2_weighted_pool" "C3_sigmoid_gate")
-ALL_D=("D_retrieval")
 
 EXPERIMENTS=()
 
@@ -43,7 +41,6 @@ if [[ $# -eq 0 ]]; then
     echo "  ./run_exp.sh all                    # Run all experiments"
     echo "  ./run_exp.sh B                      # Run B1-B4"
     echo "  ./run_exp.sh C                      # Run C1-C3"
-    echo "  ./run_exp.sh D                      # Run D"
     echo "  ./run_exp.sh B1 B2                  # Run specific experiments"
     finish 1
 fi
@@ -66,9 +63,6 @@ for arg in "$@"; do
             EXPERIMENTS+=("$arg")
             ;;
         C1_channel_gate|C2_weighted_pool|C3_sigmoid_gate)
-            EXPERIMENTS+=("$arg")
-            ;;
-        D_retrieval)
             EXPERIMENTS+=("$arg")
             ;;
         *)
@@ -104,19 +98,16 @@ for exp in "${EXPERIMENTS[@]}"; do
             OVERRIDES+=("loss.clip_weight=1.0" "model.lambda_token=0.0" "model.map_guided=true" "model.map_guided_type=spatiotemporal")
             ;;
         B4_full_token)
-            OVERRIDES+=("loss.clip_weight=1.0" "model.lambda_token=0.1" "model.map_guided=true" "model.map_guided_type=spatiotemporal" "model.map_guided_token=true")
+            OVERRIDES+=("loss.clip_weight=1.0" "model.lambda_token=0.1" "model.map_guided=true" "model.map_guided_type=spatiotemporal")
             ;;
         C1_channel_gate)
-            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=channel" "model.map_guided_channel_gate=true")
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=channel")
             ;;
         C2_weighted_pool)
-            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=weighted_pool" "model.map_guided_weighted_pool=true")
+            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_type=weighted_pool" )
             ;;
         C3_sigmoid_gate)
             OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided_sigmoid_gate=true" "model.map_guided_type=spatiotemporal")
-            ;;
-        D_retrieval)
-            OVERRIDES+=("loss.clip_weight=1.0" "model.map_guided=true" "model.map_guided_type=spatiotemporal" "model.map_guided_retrieval=true")
             ;;
     esac
 
