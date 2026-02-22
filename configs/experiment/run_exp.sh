@@ -1,8 +1,10 @@
 #!/bin/bash
 #
+# 实验目的：统一入口批量运行 ClinicalCLIP 消融与对比实验（B/C），并输出通过/失败汇总。
+#
 # Quick experiment runner for ablation studies
 # Usage:
-#   ./run_exp.sh all          # Run all experiments (B1-B4, C1-C3, D)
+#   ./run_exp.sh all          # Run all experiments (B1-B4, C1-C3)
 #   ./run_exp.sh B            # Run B-series only (B1-B4)
 #   ./run_exp.sh C            # Run C-series only (C1-C3)
 #   ./run_exp.sh B1 B2 B3     # Run specific experiments
@@ -20,7 +22,6 @@ finish() {
 
 # Always run from project root
 cd /workspace/code/ClinicalCLIP_ASD_PyTorch
-conda activate /opt/conda/envs/clip
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -35,7 +36,7 @@ EXPERIMENTS=()
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
-    echo "Usage: ./run_exp.sh [all|B|C|D|experiment_names...]"
+    echo "Usage: ./run_exp.sh [all|B|C|experiment_names...]"
     echo ""
     echo "Examples:"
     echo "  ./run_exp.sh all                    # Run all experiments"
@@ -48,16 +49,13 @@ fi
 for arg in "$@"; do
     case "$arg" in
         all)
-            EXPERIMENTS+=("${ALL_B[@]}" "${ALL_C[@]}" "${ALL_D[@]}")
+            EXPERIMENTS+=("${ALL_B[@]}" "${ALL_C[@]}")
             ;;
         B)
             EXPERIMENTS+=("${ALL_B[@]}")
             ;;
         C)
             EXPERIMENTS+=("${ALL_C[@]}")
-            ;;
-        D)
-            EXPERIMENTS+=("${ALL_D[@]}")
             ;;
         B1_clip_only|B2_map_only|B3_full|B4_full_token)
             EXPERIMENTS+=("$arg")
@@ -111,10 +109,10 @@ for exp in "${EXPERIMENTS[@]}"; do
             ;;
     esac
 
-    echo "Command: python -m project.main ${OVERRIDES[*]}"
+    echo "Command: conda run -p /opt/conda/envs/clip python -m project.main ${OVERRIDES[*]}"
     echo ""
     
-    if python -m project.main "${OVERRIDES[@]}"; then
+    if conda run -p /opt/conda/envs/clip python -m project.main "${OVERRIDES[@]}"; then
         PASSED+=("$exp")
         echo -e "${GREEN}✓ ${exp} completed${NC}"
     else

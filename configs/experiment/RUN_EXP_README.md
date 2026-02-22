@@ -2,23 +2,36 @@
 
 A simple bash script to run ablation and comparison experiments in sequence.
 
+This folder now also provides split scripts for each experiment and series.
+
 ## Usage
 
 ```bash
 # Run all experiments
 ./run_exp.sh all
 
+# Run split all-series script (B + C)
+./run_all_series.sh
+
 # Run B-series ablations (B1-B4)
 ./run_exp.sh B
+./run_B_series.sh
 
 # Run C-series map-guided variants (C1-C3)
 ./run_exp.sh C
-
-# Run D-series retrieval validation
-./run_exp.sh D
+./run_C_series.sh
 
 # Run specific experiments
 ./run_exp.sh B1_clip_only B3_full C2_weighted_pool
+
+# Run individual split scripts
+./run_B1_clip_only.sh
+./run_B2_map_only.sh
+./run_B3_full.sh
+./run_B4_full_token.sh
+./run_C1_channel_gate.sh
+./run_C2_weighted_pool.sh
+./run_C3_sigmoid_gate.sh
 
 # Mix and match series
 ./run_exp.sh B C
@@ -36,9 +49,6 @@ A simple bash script to run ablation and comparison experiments in sequence.
 - **C1**: Channel gating only
 - **C2**: Weighted pooling only
 - **C3**: Sigmoid gate
-
-### D-Series: Semantic Validation
-- **D**: Full method with retrieval metrics
 
 ## Output
 
