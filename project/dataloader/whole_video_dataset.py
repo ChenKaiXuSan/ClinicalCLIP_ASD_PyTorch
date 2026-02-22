@@ -69,7 +69,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
 
         video_name = file_info_dict["video_name"]
         video_path = file_info_dict["video_path"]
-
+    
         vframes, _, info = read_video(video_path, output_format="TCHW", pts_unit="sec")
 
         label = file_info_dict["label"]

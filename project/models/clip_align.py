@@ -26,6 +26,7 @@ This file is self-contained and drop-in if your training step consumes:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Literal
 
 import torch
@@ -106,16 +107,55 @@ def _build_resnet3d_backbone(
     depth: int,
     in_channels: int,
     pretrained: bool,
+    pretrained_ckpt_path: str | None = None,
 ) -> tuple[nn.Module, int]:
+    def _build_resnet3d_for_weights() -> nn.Module:
+        return pv_resnet.create_resnet(
+            input_channel=3,
+            model_depth=depth,
+            model_num_class=400,
+            norm=nn.BatchNorm3d,
+            activation=nn.ReLU,
+        )
+
+    def _extract_state_dict(ckpt: dict | torch.Tensor) -> dict:
+        if isinstance(ckpt, dict):
+            for key in ("state_dict", "model_state_dict", "model"):
+                if key in ckpt and isinstance(ckpt[key], dict):
+                    return ckpt[key]
+            return ckpt
+        raise ValueError("Invalid checkpoint format: expected a dict-like state dict.")
+
     if pretrained:
-        if depth == 50:
-            model = torch.hub.load("facebookresearch/pytorchvideo", "slow_r50", pretrained=True)
-        elif depth == 101:
-            model = torch.hub.load("facebookresearch/pytorchvideo", "slow_r101", pretrained=True)
-        else:
-            raise ValueError(
-                "Pretrained ResNet3D only supports depth 50 or 101 in this setup."
-            )
+        try:
+            if depth == 50:
+                model = torch.hub.load("facebookresearch/pytorchvideo", "slow_r50", pretrained=True)
+            else:
+                raise ValueError(
+                    "Pretrained ResNet3D only supports depth 50 or 101 in this setup."
+                )
+        except Exception as hub_error:
+            if not pretrained_ckpt_path:
+                raise RuntimeError(
+                    "Failed to download pretrained ResNet3D weights and no local ckpt path was provided. "
+                    "Set hparams.model.clip_backbone_ckpt_path / attn_backbone_ckpt_path."
+                ) from hub_error
+
+            ckpt_path = Path(pretrained_ckpt_path).expanduser()
+            if not ckpt_path.exists():
+                raise FileNotFoundError(
+                    f"Offline fallback ckpt not found: {ckpt_path}"
+                ) from hub_error
+
+            model = _build_resnet3d_for_weights()
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            state_dict = _extract_state_dict(ckpt)
+            cleaned_state_dict: dict[str, torch.Tensor] = {}
+            for key, value in state_dict.items():
+                if key.startswith("module."):
+                    key = key[len("module.") :]
+                cleaned_state_dict[key] = value
+            model.load_state_dict(cleaned_state_dict, strict=False)
     else:
         model = pv_resnet.create_resnet(
             input_channel=in_channels,
@@ -143,12 +183,14 @@ class ResNet3DEncoder(nn.Module):
         feature_dim: int,
         backbone_depth: int = 50,
         pretrained: bool = True,
+        pretrained_ckpt_path: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone, token_dim = _build_resnet3d_backbone(
             depth=backbone_depth,
             in_channels=in_channels,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
         self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.fc = nn.Linear(token_dim, feature_dim)
@@ -169,12 +211,14 @@ class ResNet3DTokenEncoder(nn.Module):
         hidden_dim: int = 64,
         backbone_depth: int = 50,
         pretrained: bool = True,
+        pretrained_ckpt_path: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone, token_dim = _build_resnet3d_backbone(
             depth=backbone_depth,
             in_channels=in_channels,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
         self.token_proj = nn.Conv3d(token_dim, hidden_dim, kernel_size=1, bias=False)
 
@@ -265,6 +309,7 @@ class SpatiotemporalMapGuidedVideoEncoder(nn.Module):
         use_sigmoid_gate: bool = False,
         backbone_depth: int = 50,
         pretrained: bool = True,
+        pretrained_ckpt_path: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone = ResNet3DTokenEncoder(
@@ -272,6 +317,7 @@ class SpatiotemporalMapGuidedVideoEncoder(nn.Module):
             hidden_dim,
             backbone_depth=backbone_depth,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
 
         # Learnable strength of map-guidance
@@ -330,6 +376,7 @@ class ChannelMapGuidedVideoEncoder(nn.Module):
         hidden_dim: int = 64,
         backbone_depth: int = 50,
         pretrained: bool = True,
+        pretrained_ckpt_path: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone = ResNet3DTokenEncoder(
@@ -337,6 +384,7 @@ class ChannelMapGuidedVideoEncoder(nn.Module):
             hidden_dim,
             backbone_depth=backbone_depth,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
         self.gate_mlp = nn.Sequential(
             nn.Linear(1, hidden_dim),
@@ -378,6 +426,7 @@ class WeightedPoolVideoEncoder(nn.Module):
         hidden_dim: int = 64,
         backbone_depth: int = 50,
         pretrained: bool = True,
+        pretrained_ckpt_path: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone = ResNet3DTokenEncoder(
@@ -385,6 +434,7 @@ class WeightedPoolVideoEncoder(nn.Module):
             hidden_dim,
             backbone_depth=backbone_depth,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
         self.fc = nn.Linear(hidden_dim, feature_dim)
 
@@ -497,9 +547,13 @@ class VideoAttentionCLIP(nn.Module):
         self.clip_backbone_pretrained = bool(
             getattr(hparams.model, "clip_backbone_pretrained", True)
         )
+        # self.clip_backbone_ckpt_path = getattr(hparams.model, "clip_backbone_ckpt_path", None)
+        self.clip_backbone_ckpt_path = "/home/SSR/luoxi/.cache/torch/hub/slow_r50.pyth"
         self.attn_backbone_pretrained = bool(
             getattr(hparams.model, "attn_backbone_pretrained", False)
         )
+        # self.attn_backbone_ckpt_path = getattr(hparams.model, "attn_backbone_ckpt_path", None)
+        self.attn_backbone_ckpt_path = "/home/SSR/luoxi/.cache/torch/hub/slow_r50.pyth"
 
         # Map-guided toggles
         self.map_guided = bool(getattr(hparams.model, "map_guided", True))
@@ -522,6 +576,7 @@ class VideoAttentionCLIP(nn.Module):
                     hidden_dim=self.map_guided_hidden_dim,
                     backbone_depth=self.clip_backbone_depth,
                     pretrained=self.clip_backbone_pretrained,
+                    pretrained_ckpt_path=self.clip_backbone_ckpt_path,
                 )
             elif self.map_guided_type == "weighted_pool":
                 self.video_encoder = WeightedPoolVideoEncoder(
@@ -530,6 +585,7 @@ class VideoAttentionCLIP(nn.Module):
                     hidden_dim=self.map_guided_hidden_dim,
                     backbone_depth=self.clip_backbone_depth,
                     pretrained=self.clip_backbone_pretrained,
+                    pretrained_ckpt_path=self.clip_backbone_ckpt_path,
                 )
             else:
                 self.video_encoder = SpatiotemporalMapGuidedVideoEncoder(
@@ -540,6 +596,7 @@ class VideoAttentionCLIP(nn.Module):
                     use_sigmoid_gate=self.map_guided_sigmoid_gate,
                     backbone_depth=self.clip_backbone_depth,
                     pretrained=self.clip_backbone_pretrained,
+                    pretrained_ckpt_path=self.clip_backbone_ckpt_path,
                 )
         else:
             self.video_encoder = self._build_encoder(
@@ -547,6 +604,7 @@ class VideoAttentionCLIP(nn.Module):
                 in_channels=3,
                 backbone_depth=self.clip_backbone_depth,
                 pretrained=self.clip_backbone_pretrained,
+                pretrained_ckpt_path=self.clip_backbone_ckpt_path,
             )
 
         # Attention-map encoder (treat map as a 3D volume)
@@ -555,6 +613,7 @@ class VideoAttentionCLIP(nn.Module):
             self.feature_dim,
             backbone_depth=self.clip_backbone_depth,
             pretrained=self.attn_backbone_pretrained,
+            pretrained_ckpt_path=self.attn_backbone_ckpt_path,
         )
 
         # Projection heads
@@ -574,6 +633,7 @@ class VideoAttentionCLIP(nn.Module):
         in_channels: int,
         backbone_depth: int,
         pretrained: bool,
+        pretrained_ckpt_path: str | None,
     ) -> nn.Module:
         if backbone == "2dcnn":
             return Simple2DEncoder(in_channels, self.feature_dim)
@@ -584,6 +644,7 @@ class VideoAttentionCLIP(nn.Module):
             self.feature_dim,
             backbone_depth=backbone_depth,
             pretrained=pretrained,
+            pretrained_ckpt_path=pretrained_ckpt_path,
         )
 
     def forward(
