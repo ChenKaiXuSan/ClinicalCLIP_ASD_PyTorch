@@ -7,13 +7,6 @@
 #PBS -o logs/pegasus/run_compare.log
 #PBS -e logs/pegasus/run_compare_err.log
 
-set -e
-
-# Move to submission directory if available
-if [[ -n "$PBS_O_WORKDIR" ]]; then
-	cd "$PBS_O_WORKDIR"
-fi
-
 # === 切换到作业提交目录 ===
 cd /work/SSR/share/code/ClinicalCLIP_ASD_PyTorch
 mkdir -p logs/pegasus
