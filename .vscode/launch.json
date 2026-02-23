@@ -15,7 +15,7 @@
       "module": "project.main",
       "console": "integratedTerminal",
       "args": [
-        "experiment=B1_clip_only",
+        "train.experiment=B1_clip_only",
         "train.gpu_num=1"
       ]
     }
