@@ -70,6 +70,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         video_name = file_info_dict["video_name"]
         video_path = file_info_dict["video_path"]
 
+        # TODO: 之后修改为从video_path里面读取video path进行load
         # * json mix里面是提前写好的，但是在超算的环境下，video path是需要改变的
         video_path = "/" + "/".join(self._labeled_videos[index].parts[1:4]) + "/video/" + "/".join(video_path.split("/")[-3:])
         vframes, _, info = read_video(video_path, output_format="TCHW", pts_unit="sec")
