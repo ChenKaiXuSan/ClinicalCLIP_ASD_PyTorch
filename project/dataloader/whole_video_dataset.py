@@ -23,6 +23,14 @@ from project.dataloader.med_attn_map import MedAttnMap
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class ClinicalAttnVideoData:
+    video: torch.Tensor
+    label: int
+    attn_map: torch.Tensor
+    disease: str
+    video_name: str
+    video_index: int
 
 class LabeledGaitVideoDataset(torch.utils.data.Dataset):
     def __init__(
@@ -72,7 +80,10 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
 
         # TODO: 之后修改为从video_path里面读取video path进行load
         # * json mix里面是提前写好的，但是在超算的环境下，video path是需要改变的
-        video_path = "/" + "/".join(self._labeled_videos[index].parts[1:4]) + "/video/" + "/".join(video_path.split("/")[-3:])
+        # video_path = "/" + "/".join(self._labeled_videos[index].parts[1:4]) + "/video/" + "/".join(video_path.split("/")[-3:])
+        _pref = str(self._labeled_videos[index]).split("json_mix/")[0]
+        video_path = _pref + "video/" + "/".join(video_path.split("/")[-3:])
+        # logger.info(f"Loading video from path: {video_path}")
         vframes, _, info = read_video(video_path, output_format="TCHW", pts_unit="sec")
 
         label = file_info_dict["label"]
