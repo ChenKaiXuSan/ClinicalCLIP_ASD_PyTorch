@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
-RESULTS_DIR="$SCRIPT_DIR/tsne_results"
+RESULTS_DIR="$PROJECT_DIR/logs/tsne_results"
 EXPORT_DIR="${1:-$PROJECT_DIR/logs/tsne_export}"
 
 echo "=========================================="
@@ -18,7 +18,6 @@ echo ""
 if [ ! -d "$RESULTS_DIR" ]; then
     echo "❌ 错误：找不到 t-SNE 结果目录: $RESULTS_DIR"
     echo "请先运行: python tsne.py"
-    exit 1
 fi
 
 # 创建导出目录结构
