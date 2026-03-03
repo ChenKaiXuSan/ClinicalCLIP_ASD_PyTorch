@@ -12,6 +12,7 @@ Lightning module for CLIP-style video-attention alignment.
 
 import logging
 from typing import Dict
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -245,6 +246,21 @@ class CLIPAlignModule(LightningModule):
             save_path=self.save_root,
             num_class=self.num_classes,
         )
+
+        if self.test_video_embed_list and self.test_attn_embed_list and self.test_label_list:
+            fold_name = self.logger.root_dir.split("/")[-1] if self.logger else "fold"
+            emb_save_path = Path(self.save_root) / "embeddings"
+            emb_save_path.mkdir(parents=True, exist_ok=True)
+
+            video_embed = torch.cat(self.test_video_embed_list, dim=0)
+            attn_embed = torch.cat(self.test_attn_embed_list, dim=0)
+            labels = torch.cat(self.test_label_list, dim=0)
+
+            torch.save(video_embed, emb_save_path / f"{fold_name}_video_embed.pt")
+            torch.save(attn_embed, emb_save_path / f"{fold_name}_attn_embed.pt")
+            torch.save(labels, emb_save_path / f"{fold_name}_label.pt")
+
+            logger.info(f"saved embeddings to {emb_save_path}")
 
         logger.info("test epoch end")
 
