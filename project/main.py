@@ -102,7 +102,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         auto_insert_metric_name=False,
         monitor="val/video_acc",
         mode="max",
-        save_last=False,
+        save_last=True,
         save_top_k=2,
     )
 
@@ -127,7 +127,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
             progress_bar,
             rich_model_summary,
             model_check_point,
-            early_stopping,
+            # early_stopping,
             lr_monitor,
         ],
         # limit_train_batches=2,

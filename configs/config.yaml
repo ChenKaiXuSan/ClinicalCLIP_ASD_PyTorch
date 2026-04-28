@@ -53,7 +53,7 @@ model:
 
 train:
   # Training config
-  max_epochs: 50 # numer of epochs of training
+  max_epochs: 100
 
   # used for val
   clip_duration: 1 # clip duration for the video
@@ -65,9 +65,9 @@ train:
 
   gpu_num: 0 # GPU device number
 
-  fold: 5 # the fold number of the cross validation
+  fold: 10 # the fold number of the cross validation
 
 optimizer:
-  lr: 0.0001 # learning rate
+  lr: 0.01 # learning rate
 
 log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}
