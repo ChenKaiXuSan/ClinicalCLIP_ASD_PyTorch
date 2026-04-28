@@ -17,10 +17,35 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
+import av
+import numpy as np
 import torch
-from torchvision.io import read_video
 
 from project.dataloader.med_attn_map import MedAttnMap
+
+
+def read_video(filename: str, output_format: str = "TCHW", pts_unit: str = "sec"):
+    """torchvision>=0.26 移除了 read_video，用 PyAV 实现兼容替代。
+    返回 (vframes, aframes, info)，与原接口一致。
+    """
+    frames = []
+    fps = 0.0
+    with av.open(filename) as container:
+        stream = container.streams.video[0]
+        fps = float(stream.average_rate or 0)
+        for frame in container.decode(stream):
+            frames.append(frame.to_ndarray(format="rgb24"))  # H x W x C
+
+    if frames:
+        vframes = torch.from_numpy(np.stack(frames))  # T x H x W x C
+    else:
+        vframes = torch.zeros((0, 0, 0, 3), dtype=torch.uint8)
+
+    if output_format == "TCHW":
+        vframes = vframes.permute(0, 3, 1, 2)  # T x C x H x W
+
+    info = {"video_fps": fps}
+    return vframes, torch.tensor([]), info
 
 logger = logging.getLogger(__name__)
 

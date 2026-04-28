@@ -24,7 +24,7 @@ import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 
-from torchvision.io import write_video
+
 from torchvision.utils import save_image, flow_to_image
 
 from project.models.make_model import MakeImageModule
