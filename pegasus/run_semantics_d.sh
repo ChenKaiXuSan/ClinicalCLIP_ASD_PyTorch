@@ -13,18 +13,18 @@ if [[ -n "$PBS_O_WORKDIR" ]]; then
 fi
 
 # === 切换到作业提交目录 ===
-cd /work/SSR/share/code/ClinicalCLIP_ASD_PyTorch
+cd /work/SKIING/chenkaixu/code/ClinicalCLIP_ASD_PyTorch
 
 mkdir -p logs/pegasus
 
-source activate  /home/SSR/luoxi/miniconda3/envs/clip
+source activate /home/SKIING/chenkaixu/miniconda3/envs/clip
 
 echo "Current working directory: $(pwd)"
 echo "Current Python: $(which python)"
 
-ROOT_PATH="/work/SSR/share/data/asd_dataset"
-VIDEO_PATH="/work/SSR/share/data/asd_dataset/segmentation_dataset_512"
-INFO_PATH="/work/SSR/share/data/asd_dataset/clinical_CLIP_dataset"
+ROOT_PATH="/work/SKIING/chenkaixu/data/asd_dataset"
+VIDEO_PATH="/work/SKIING/chenkaixu/data/asd_dataset/segmentation_dataset_512"
+INFO_PATH="/work/SKIING/chenkaixu/data/asd_dataset/clinical_CLIP_dataset"
 
 # Single-experiment selection (same mapping as run_compare.sh)
 # You can override by exporting EXP_IDX before qsub, e.g.:
