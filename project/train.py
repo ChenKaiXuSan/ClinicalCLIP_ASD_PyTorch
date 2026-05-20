@@ -24,6 +24,7 @@ import logging
 import os
 
 import hydra
+import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import (
@@ -31,9 +32,9 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
     RichModelSummary,
-    TQDMProgressBar,
+    RichProgressBar,
 )
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 
 from project.cross_validation import DefineCrossValidation
 from project.dataloader.data_loader import WalkDataModule
@@ -92,8 +93,13 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         name=str(fold),  # here should be str type.
     )
 
+    csv_logger = CSVLogger(
+        save_dir=os.path.join(hparams.log_path),
+        name=str(fold),  # here should be str type.
+    )
+
     # some callbacks
-    progress_bar = TQDMProgressBar(refresh_rate=100)
+    progress_bar = RichProgressBar(refresh_rate=100, leave=True)
     rich_model_summary = RichModelSummary(max_depth=2)
 
     # define the checkpoint becavier.
@@ -121,7 +127,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         ],
         accelerator="gpu",
         max_epochs=hparams.train.max_epochs,
-        logger=tb_logger,  # wandb_logger,
+        logger=[tb_logger, csv_logger],
         check_val_every_n_epoch=1,
         callbacks=[
             progress_bar,
@@ -138,12 +144,15 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     trainer.fit(classification_module, data_module)
 
     # the validate method will wirte in the same log twice, so use the test method.
-    trainer.test(
+    test_metrics = trainer.test(
         classification_module,
         data_module,
         ckpt_path="best",
         weights_only=False,
     )
+
+    with open(os.path.join(tb_logger.log_dir, "test_metrics.txt"), "w") as f:
+        f.write(str(test_metrics))
 
 
 @hydra.main(
@@ -152,37 +161,14 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     config_name="config.yaml",
 )
 def init_params(config):
-    #######################
-    # prepare dataset index
-    #######################
 
     fold_dataset_idx = DefineCrossValidation(config)()
 
-    logging.info("#" * 50)
-    logging.info("Start train all fold")
-    logging.info("#" * 50)
-
-    #########
-    # K fold
-    #########
-    # * for one fold, we first train/val model, then save the best ckpt preds/label into .pt file.
-
     for fold, dataset_value in fold_dataset_idx.items():
-        logging.info("#" * 50)
-        logging.info("Start train fold: {}".format(fold))
-        logging.info("#" * 50)
-
         train(config, dataset_value, fold)
-
-        logging.info("#" * 50)
-        logging.info("finish train fold: {}".format(fold))
-        logging.info("#" * 50)
-
-    logging.info("#" * 50)
-    logging.info("finish train all fold")
-    logging.info("#" * 50)
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision("high")
     os.environ["HYDRA_FULL_ERROR"] = "1"
     init_params()

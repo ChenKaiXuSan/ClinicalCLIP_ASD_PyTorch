@@ -20,8 +20,6 @@ from pytorch_lightning import LightningModule
 from torchmetrics.classification import (
     MulticlassAccuracy,
     MulticlassF1Score,
-    MulticlassPrecision,
-    MulticlassRecall,
 )
 
 from project.models.clip_align import (
@@ -50,8 +48,6 @@ class CLIPAlignModule(LightningModule):
         self.model = VideoAttentionCLIP(hparams)
 
         self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._precision = MulticlassPrecision(num_classes=self.num_classes)
-        self._recall = MulticlassRecall(num_classes=self.num_classes)
         self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
 
         self.save_root = hparams.log_path
@@ -73,7 +69,7 @@ class CLIPAlignModule(LightningModule):
         align_loss = clip_contrastive_loss_with_scale(
             outputs["video_embed"],
             outputs["attn_embed"],
-            logit_scale=self.model.logit_scale
+            logit_scale=self.model.logit_scale,
         )
         token_align_loss = outputs.get("token_align_loss")
         if token_align_loss is None:
@@ -88,8 +84,6 @@ class CLIPAlignModule(LightningModule):
         probs = torch.softmax(logits, dim=1)
         metrics = {
             f"{stage}/video_acc": self._accuracy(probs, label),
-            f"{stage}/video_precision": self._precision(probs, label),
-            f"{stage}/video_recall": self._recall(probs, label),
             f"{stage}/video_f1_score": self._f1_score(probs, label),
         }
 
@@ -99,6 +93,7 @@ class CLIPAlignModule(LightningModule):
             on_epoch=True,
             on_step=stage == "train",
             batch_size=label.size(0),
+            prog_bar=stage == "train",
         )
         self.log(
             f"{stage}/loss_cls",
@@ -106,6 +101,7 @@ class CLIPAlignModule(LightningModule):
             on_epoch=True,
             on_step=stage == "train",
             batch_size=label.size(0),
+            prog_bar=stage == "train",
         )
         self.log(
             f"{stage}/loss_clip",
@@ -113,6 +109,7 @@ class CLIPAlignModule(LightningModule):
             on_epoch=True,
             on_step=stage == "train",
             batch_size=label.size(0),
+            prog_bar=stage == "train",
         )
         self.log(
             f"{stage}/loss_token",
@@ -120,12 +117,12 @@ class CLIPAlignModule(LightningModule):
             on_epoch=True,
             on_step=stage == "train",
             batch_size=label.size(0),
+            prog_bar=stage == "train",
         )
         self.log_dict(
             metrics, on_epoch=True, on_step=stage == "train", batch_size=label.size(0)
         )
 
-        logger.info(f"{stage} loss: {loss.item():.4f}")
         return loss
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int):
@@ -171,8 +168,6 @@ class CLIPAlignModule(LightningModule):
 
         metric_dict = {
             "test/video_acc": self._accuracy(probs, label),
-            "test/video_precision": self._precision(probs, label),
-            "test/video_recall": self._recall(probs, label),
             "test/video_f1_score": self._f1_score(probs, label),
         }
         self.log_dict(
@@ -228,8 +223,15 @@ class CLIPAlignModule(LightningModule):
                     sim_incorrect = torch.tensor(0.0)
 
                 sim_gap = sim_correct - sim_incorrect
-                self.log("test/align_sim_correct", sim_correct, on_epoch=True, on_step=False)
-                self.log("test/align_sim_incorrect", sim_incorrect, on_epoch=True, on_step=False)
+                self.log(
+                    "test/align_sim_correct", sim_correct, on_epoch=True, on_step=False
+                )
+                self.log(
+                    "test/align_sim_incorrect",
+                    sim_incorrect,
+                    on_epoch=True,
+                    on_step=False,
+                )
                 self.log("test/align_sim_gap", sim_gap, on_epoch=True, on_step=False)
 
                 if sim_diag.numel() > 1 and correct.std() > 0:
@@ -247,7 +249,11 @@ class CLIPAlignModule(LightningModule):
             num_class=self.num_classes,
         )
 
-        if self.test_video_embed_list and self.test_attn_embed_list and self.test_label_list:
+        if (
+            self.test_video_embed_list
+            and self.test_attn_embed_list
+            and self.test_label_list
+        ):
             fold_name = self.logger.root_dir.split("/")[-1] if self.logger else "fold"
             emb_save_path = Path(self.save_root) / "embeddings"
             emb_save_path.mkdir(parents=True, exist_ok=True)
