@@ -183,7 +183,7 @@ class CLIPAlignModule(LightningModule):
         self.test_video_embed_list.append(outputs["video_embed"].detach().cpu())
         self.test_attn_embed_list.append(outputs["attn_embed"].detach().cpu())
 
-        return probs, logits
+        # return probs, logits
 
     def on_test_epoch_end(self) -> None:
         """hook function for test epoch end"""

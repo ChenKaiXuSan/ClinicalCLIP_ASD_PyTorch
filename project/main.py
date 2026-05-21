@@ -86,12 +86,12 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # for the tensorboard
     tb_logger = TensorBoardLogger(
-        save_dir=os.path.join(hparams.log_path),
+        save_dir=os.path.join(hparams.log_path, "tensorboard"),
         name=str(fold),  # here should be str type.
     )
 
     csv_logger = CSVLogger(
-        save_dir=os.path.join(hparams.log_path),
+        save_dir=os.path.join(hparams.log_path, "csv"),
         name=str(fold),  # here should be str type.
     )
 
@@ -101,6 +101,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # define the checkpoint becavier.
     model_check_point = ModelCheckpoint(
+        dirpath=os.path.join(hparams.log_path, "checkpoint", str(fold)),
         filename="{epoch}-{val/loss:.2f}-{val/video_acc:.4f}",
         auto_insert_metric_name=False,
         monitor="val/video_acc",
