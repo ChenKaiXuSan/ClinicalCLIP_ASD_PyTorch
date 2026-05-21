@@ -21,7 +21,7 @@ import av
 import numpy as np
 import torch
 
-from project.dataloader.med_attn_map import MedAttnMap
+from .med_attn_map import MedAttnMap
 
 
 def read_video(filename: str, output_format: str = "TCHW", pts_unit: str = "sec"):

@@ -9,6 +9,8 @@ hydra:
     chdir: false
 
 loss:
+  lr: 0.01
+  weight_decay: 0.001
   clip_weight: 1.0
   clip_temperature: 0.07
 
@@ -66,8 +68,5 @@ train:
   gpu_num: 0 # GPU device number
 
   fold: 10 # the fold number of the cross validation
-
-optimizer:
-  lr: 0.01 # learning rate
 
 log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -6,7 +6,7 @@ set -e
 
 SELECTED_GPU="${1:-${GPU_NUM:-0}}"
 
-cd /workspace/code/ClinicalCLIP_ASD_PyTorch
+cd /workspace/code
 
 conda run -p /opt/conda/envs/clip python -m project.main \
   train.experiment=C1_channel_gate \

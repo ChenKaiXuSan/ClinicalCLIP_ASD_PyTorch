@@ -35,24 +35,21 @@ from pytorch_lightning.callbacks import (
     RichProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
-
-from project.cross_validation import DefineCrossValidation
-from project.dataloader.data_loader import WalkDataModule
+  
+from cross_validation import DefineCrossValidation
+from dataloader.data_loader import WalkDataModule
 
 # CLIP-style alignment
-from project.trainer.train_clip_align import CLIPAlignModule
+from trainer.train_clip_align import CLIPAlignModule
 
 # compare experiment
-from project.trainer.train_cnn import CNNModule
+from trainer.train_cnn import CNNModule
 
 # compare experiment
-from project.trainer.train_cnn_lstm import CNNLstmModule
+from trainer.train_cnn_lstm import CNNLstmModule
 
-#####################################
-# select different experiment trainer
-#####################################
 # 3D CNN model
-from project.trainer.train_res_3dcnn import SingleModule
+from trainer.train_res_3dcnn import SingleModule
 
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
@@ -100,7 +97,7 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # some callbacks
     progress_bar = RichProgressBar(refresh_rate=100, leave=True)
-    rich_model_summary = RichModelSummary(max_depth=2)
+    rich_model_summary = RichModelSummary(max_depth=3)
 
     # define the checkpoint becavier.
     model_check_point = ModelCheckpoint(
@@ -133,7 +130,6 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
             progress_bar,
             rich_model_summary,
             model_check_point,
-            # early_stopping,
             lr_monitor,
         ],
         # limit_train_batches=2,

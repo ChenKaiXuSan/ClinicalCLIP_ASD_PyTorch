@@ -27,7 +27,7 @@ from pytorch_lightning import LightningModule
 
 from torchvision.utils import save_image, flow_to_image
 
-from project.models.make_model import MakeImageModule
+from models.make_model import MakeImageModule
 
 from torchmetrics.classification import (
     MulticlassAccuracy,

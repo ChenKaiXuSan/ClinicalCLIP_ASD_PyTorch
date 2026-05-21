@@ -57,7 +57,7 @@ if [[ -n "$INFO_PATH" ]]; then
   EXTRA_PATHS+=" paths.info_path=${INFO_PATH}"
 fi
 
-python -m project.main \
+python project/main.py \
   model.backbone=clip \
   train.experiment=${EXP_NAME} \
   ${EXP_ARG} \

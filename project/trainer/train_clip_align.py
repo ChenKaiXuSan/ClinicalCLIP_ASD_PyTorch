@@ -22,11 +22,11 @@ from torchmetrics.classification import (
     MulticlassF1Score,
 )
 
-from project.models.clip_align import (
+from models.clip_align import (
     VideoAttentionCLIP,
     clip_contrastive_loss_with_scale,
 )
-from project.utils.helper import save_helper
+from utils.helper import save_helper
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +36,15 @@ class CLIPAlignModule(LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.lr = float(getattr(hparams.optimizer, "lr", 1e-3))
+        # loss configuration
+        loss_cfg = getattr(hparams, "loss", {})
+        self.lr = float(getattr(loss_cfg, "lr", 0.01))
+        self.weight_decay = float(getattr(loss_cfg, "weight_decay", 0.001))
+        self.clip_loss_weight = float(getattr(loss_cfg, "clip_weight", 1.0))
+        self.temperature = float(getattr(loss_cfg, "clip_temperature", 0.07))
+
         self.num_classes = int(getattr(hparams.model, "model_class_num", 3))
-        self.clip_loss_weight = float(getattr(hparams.loss, "clip_weight", 1.0))
         self.token_loss_weight = float(getattr(hparams.model, "lambda_token", 0.0))
-        self.temperature = float(getattr(hparams.loss, "clip_temperature", 0.07))
         self.classifier_source = getattr(
             hparams.model, "clip_classifier_source", "video"
         )
@@ -58,11 +62,11 @@ class CLIPAlignModule(LightningModule):
         return self.model(video, attn_map, classifier_source=self.classifier_source)
 
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
-        video = batch["video"].detach()
-        attn_map = batch["attn_map"].detach()
-        label = batch["label"].detach().long()
+        video = batch["video"].detach()  # b, c, t, h, w
+        attn_map = batch["attn_map"].detach()  # b, 1, t, h, w
+        label = batch["label"].detach().long()  # b
 
-        outputs = self(video, attn_map)
+        outputs = self.model(video, attn_map, classifier_source=self.classifier_source)
         logits = outputs["logits"]
 
         cls_loss = F.cross_entropy(logits, label)
@@ -271,13 +275,16 @@ class CLIPAlignModule(LightningModule):
         logger.info("test epoch end")
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.trainer.estimated_stepping_batches
+        )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=self.trainer.estimated_stepping_batches
-                ),
+                "scheduler": lr_scheduler,
                 "monitor": "train/loss",
             },
         }

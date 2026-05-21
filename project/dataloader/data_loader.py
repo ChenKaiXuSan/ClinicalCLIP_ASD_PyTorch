@@ -19,8 +19,8 @@ from torch.utils.data import DataLoader
 from pytorchvideo.data import make_clip_sampler
 from pytorchvideo.data.labeled_video_dataset import labeled_video_dataset
 
-from project.dataloader.whole_video_dataset import whole_video_dataset
-from project.dataloader.utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
+from .whole_video_dataset import whole_video_dataset
+from .utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
 
 
 DISEASE_TO_NUM_MAPPING: Dict = {

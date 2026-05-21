@@ -21,7 +21,7 @@ finish() {
 }
 
 # Always run from project root
-cd /workspace/code/ClinicalCLIP_ASD_PyTorch
+cd /workspace/code
 
 # Colors for output
 GREEN='\033[0;32m'

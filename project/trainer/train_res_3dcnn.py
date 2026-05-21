@@ -44,7 +44,7 @@ from torchmetrics.classification import (
     MulticlassConfusionMatrix
 )
 
-from project.models.make_model import MakeVideoModule
+from models.make_model import MakeVideoModule
 
 class SingleModule(LightningModule):
     def __init__(self, hparams):

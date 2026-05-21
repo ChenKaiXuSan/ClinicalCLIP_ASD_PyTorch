@@ -10,13 +10,13 @@
       "name": "train",
       "type": "debugpy",
       "request": "launch",
-      "cwd": "/workspace/code/ClinicalCLIP_ASD_PyTorch",
-      // "python": "/opt/conda/envs/clip/bin/python",
-      "module": "project.main",
+      "cwd": "/workspace/code/",
+      "program": "project/train.py",
       "console": "integratedTerminal",
       "args": [
         "train.experiment=B1_clip_only",
-        "train.gpu_num=1"
+        "train.gpu_num=1",
+        "data.num_workers=0",
       ]
     }
   ]
