@@ -139,6 +139,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         attn_map: Optional[MedAttnMap] = None,
         region_supervision: bool = False,
         region_map_size: int = 28,
+        return_pose: bool = False,
     ) -> None:
         super().__init__()
 
@@ -149,6 +150,8 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         # 概念架构走 grounding 监督:按区域拆开的低分辨率图 + 区域软标签
         self._region_supervision = region_supervision
         self._region_map_size = region_map_size
+        # 纯姿态基线用,与视频共用同一批帧下标
+        self._return_pose = return_pose
 
         # 优先复用外部传入的实例:骨架 pkl 有 97MB,train/val/test 各建一份纯属浪费
         if attn_map is not None:
@@ -240,6 +243,15 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
             sample["region_map"] = region_map.permute(0, 2, 1, 3, 4).contiguous()
             sample["region_target"] = self.attn_map.presence_for(video_name)
 
+        if self._return_pose and self.attn_map is not None:
+            pose = self.attn_map.pose_for(video_name, wanted)  # (U, 17, 3)
+            # (n_chunks, T, 17, 3),时间采样与 video 完全一致
+            sample["pose"] = (
+                pose.index_select(0, inverse)
+                .view(n_chunks, self._num_samples, *pose.shape[1:])
+                .contiguous()
+            )
+
         return sample
 
 
@@ -253,6 +265,7 @@ def whole_video_dataset(
     attn_map: Optional[MedAttnMap] = None,
     region_supervision: bool = False,
     region_map_size: int = 28,
+    return_pose: bool = False,
     clip_duration: int = 1,
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
@@ -265,4 +278,5 @@ def whole_video_dataset(
         attn_map=attn_map,
         region_supervision=region_supervision,
         region_map_size=region_map_size,
+        return_pose=return_pose,
     )

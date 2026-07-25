@@ -70,6 +70,12 @@ model:
   concept_freeze_text: true
   region_map_size: 28 # grounding 目标图的空间分辨率
   shuffle_region: false # 消融: 打乱区域标注, 检验增益是否来自临床知识
+  # both | doctor1 | doctor2。两位医生仅 45.7% 一致, 用来检验软标签设计是否
+  # 真的优于只用单个标注者
+  doctor_source: "both"
+
+  # ---- pose-only baseline (backbone=pose) ----
+  pose_hidden_dim: 64
 
 train:
   # Training config

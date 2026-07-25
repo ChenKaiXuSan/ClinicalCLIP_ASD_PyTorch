@@ -51,6 +51,9 @@ class WalkDataModule(LightningDataModule):
         # concept 架构需要按区域拆开的 grounding 目标
         self._region_supervision = opt.model.backbone == "concept"
         self._region_map_size = getattr(opt.model, "region_map_size", 28)
+        # 纯姿态基线只吃关键点
+        self._return_pose = opt.model.backbone == "pose"
+        self._doctor_source = getattr(opt.model, "doctor_source", "both")
 
         self.train_video_transform = Compose(
             [
@@ -94,7 +97,9 @@ class WalkDataModule(LightningDataModule):
             # 骨架 pkl 97MB,只建一次给三个 dataset 共用(worker fork 时也只有一份)
             if self._med_attn_map is None:
                 self._med_attn_map = MedAttnMap(
-                    self._doctor_res_path, self._skeleton_path
+                    self._doctor_res_path,
+                    self._skeleton_path,
+                    doctor_source=self._doctor_source,
                 )
 
             common = dict(
@@ -104,6 +109,7 @@ class WalkDataModule(LightningDataModule):
                 attn_map=self._med_attn_map,
                 region_supervision=self._region_supervision,
                 region_map_size=self._region_map_size,
+                return_pose=self._return_pose,
                 clip_duration=self._clip_duration,
             )
 
@@ -144,6 +150,7 @@ class WalkDataModule(LightningDataModule):
         batch_attn_map = []
         batch_region_map = []
         batch_region_target = []
+        batch_pose = []
 
         for i in batch:
             gait_num, *_ = i["video"].shape
@@ -151,6 +158,9 @@ class WalkDataModule(LightningDataModule):
 
             batch_video.append(i["video"])
             batch_attn_map.append(i["attn_map"])
+
+            if "pose" in i:
+                batch_pose.append(i["pose"])
 
             if "region_map" in i:
                 batch_region_map.append(i["region_map"])
@@ -184,7 +194,7 @@ class WalkDataModule(LightningDataModule):
                 {
                     k: v
                     for k, v in i.items()
-                    if k not in ("video", "attn_map", "region_map", "region_target")
+                    if k not in ("video", "attn_map", "region_map", "region_target", "pose")
                 }
                 for i in batch
             ],
@@ -193,6 +203,9 @@ class WalkDataModule(LightningDataModule):
         if batch_region_map:
             out["region_map"] = torch.cat(batch_region_map, dim=0)
             out["region_target"] = torch.cat(batch_region_target, dim=0)
+
+        if batch_pose:
+            out["pose"] = torch.cat(batch_pose, dim=0)
 
         return out
 

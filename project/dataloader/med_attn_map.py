@@ -53,9 +53,23 @@ REGIONS: List[str] = ["foot", "wrist", "shoulder", "lumbar_pelvis", "head"]
 
 class MedAttnMap:
 
-    def __init__(self, doctor_res_path: str, skeleton_path: str) -> None:
+    def __init__(
+        self,
+        doctor_res_path: str,
+        skeleton_path: str,
+        doctor_source: str = "both",
+    ) -> None:
         self.doctor_res = self._load_doctor_res(doctor_res_path)
         self.skeleton = self._load_skeleton(skeleton_path)
+
+        # 两位医生只有 45.7% 一致,需要能单独用某一位来检验软标签设计是否真的更好
+        if doctor_source == "doctor1":
+            self.doctor_res = self.doctor_res[:1]
+        elif doctor_source == "doctor2":
+            self.doctor_res = self.doctor_res[1:]
+        elif doctor_source != "both":
+            raise ValueError(f"doctor_source 只能是 both/doctor1/doctor2,收到 {doctor_source}")
+        self.doctor_source = doctor_source
 
         # 两个查找都是对全表的子串匹配(骨架表 2277 条),按 video_name 记忆化
         self._keypoint_cache: Dict[str, set] = {}
@@ -167,10 +181,14 @@ class MedAttnMap:
         sigma = 0.1 * min(height, width)
         denom = 2.0 * sigma**2
 
-        # 负坐标表示该帧缺失该关键点,原实现记为全零图
+        # 负坐标表示该帧缺失该关键点,记为全零图
         valid = (x >= 0) & (y >= 0)
-        # 原实现只在置信度 > 0.8 时按置信度缩放,否则保持原样
-        scale = torch.where(conf > 0.8, conf, torch.ones_like(conf)) * valid
+        # 直接按置信度加权。旧实现写的是 where(conf > 0.8, conf, 1.0),方向是反的:
+        # conf=0.95 拿 0.95,conf=0.05(姿态估计基本失败)反而拿满权重 1.0。
+        # 在旧的 clip 路线里这只影响一张会被 min-max 归一化的引导图,危害有限;
+        # 但在 concept 架构里 region_map 是 grounding KL 的空间目标,估计失败的
+        # 关键点会以满强度把模型注意力拉到错误位置。
+        scale = conf.clamp(0.0, 1.0) * valid
 
         x_range = torch.arange(width, dtype=torch.float32)
         y_range = torch.arange(height, dtype=torch.float32)
@@ -180,6 +198,26 @@ class MedAttnMap:
         gy = gy * scale[..., None]
 
         return torch.einsum("fkh,fkw->fhw", gy, gx) / len(keypoints)
+
+    def pose_for(self, video_name: str, frame_idx: torch.Tensor) -> torch.Tensor:
+        """取指定帧的骨架关键点,(F, 17, 3) = (x, y, score)。
+
+        纯姿态基线用。注意力图本来就是从骨架渲染的,所以必须回答"只用姿态能不能
+        达到同样精度"——若能,视频分支的必要性就存疑。这里与视频共用同一批
+        frame_idx,保证两条路的时间采样完全一致。
+        """
+        annotation = self.skeleton_for(video_name)
+        num_frames = int(frame_idx.numel())
+        if annotation is None:
+            return torch.zeros((num_frames, 17, 3))
+
+        keypoint = torch.as_tensor(annotation["keypoint"], dtype=torch.float32)
+        score = torch.as_tensor(annotation["keypoint_score"], dtype=torch.float32)
+        idx = frame_idx.clamp(max=keypoint.shape[1] - 1)
+
+        coords = keypoint[0].index_select(0, idx)  # (F, 17, 2) 归一化坐标
+        conf = score[0].index_select(0, idx).unsqueeze(-1)  # (F, 17, 1)
+        return torch.cat([coords, conf], dim=-1)
 
     def regions_per_doctor(self, video_name: str) -> List[set]:
         """每位医生各自标注的区域集合,不做并集——两位医生只有 45.7% 一致,
@@ -205,9 +243,14 @@ class MedAttnMap:
             per_doctor = self.regions_per_doctor(video_name)
             target = torch.zeros(len(REGIONS))
             if per_doctor:
+                # 分母用医生总数而非"有标注的医生数":否则某位医生漏标时,
+                # 另一位的意见会被当成两人一致的硬标签(1.0),这正是软目标
+                # 设计要避免的。当前数据每条视频两位医生都有标注,此处主要
+                # 是防御性的;doctor_source 只取一位时分母自然为 1。
+                denom = len(self.doctor_res)
                 for i, region in enumerate(REGIONS):
                     hit = sum(1 for regions in per_doctor if region in regions)
-                    target[i] = hit / len(per_doctor)
+                    target[i] = hit / denom
             self._presence_cache[video_name] = target
         return self._presence_cache[video_name]
 

@@ -39,8 +39,9 @@ from .clip_align import ResNet3DTokenEncoder
 
 logger = logging.getLogger(__name__)
 
-# 与 dataloader.med_attn_map.REGIONS 保持同序
-REGIONS = ["foot", "wrist", "shoulder", "lumbar_pelvis", "head"]
+# 直接复用数据侧的定义:两处各写一份时,顺序一旦错配就会静默地把 grounding
+# 目标接到错误的概念上,而且不会报任何错
+from dataloader.med_attn_map import REGIONS  # noqa: E402
 
 # 供外部预计算文本向量时使用,顺序同上
 CONCEPT_PROMPTS = [
@@ -72,21 +73,27 @@ class ConceptBank(nn.Module):
 
         self.text_embedding = None
         if text_embedding_path:
-            try:
-                weight = torch.load(text_embedding_path, map_location="cpu")
-                weight = torch.as_tensor(weight, dtype=torch.float32)
-                if weight.shape[0] != num_regions:
-                    raise ValueError(
-                        f"concept embedding 行数 {weight.shape[0]} 与区域数 {num_regions} 不符"
-                    )
-                self.text_embedding = nn.Parameter(weight, requires_grad=not freeze_text)
-                self.proj = nn.Linear(weight.shape[1], embed_dim)
-                logger.info("concept bank 使用文本向量 %s", text_embedding_path)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("加载 %s 失败(%s),退回可学习概念", text_embedding_path, exc)
-                self.text_embedding = None
-
-        if self.text_embedding is None:
+            # 不做 try/except 静默降级:文件路径写错时会悄悄变回可学习概念,
+            # 于是"文本概念 vs 可学习概念"的对照实验实际跑成了两组同样的配置
+            weight = torch.load(text_embedding_path, map_location="cpu", weights_only=False)
+            weight = torch.as_tensor(weight, dtype=torch.float32)
+            if weight.shape[0] != num_regions:
+                raise ValueError(
+                    f"concept embedding 行数 {weight.shape[0]} 与区域数 {num_regions} 不符"
+                )
+            self.text_embedding = nn.Parameter(weight, requires_grad=not freeze_text)
+            self.proj = nn.Linear(weight.shape[1], embed_dim)
+            # 投影层也必须冻结。5 个线性无关的 512 维向量经一个可训练的
+            # Linear(512, 256) 能映射到任意 5 个 256 维目标(每个输出维只是
+            # 5 个方程、512 个未知数),不冻结的话文本概念与可学习概念是
+            # 同一个假设空间,对照实验失去意义。
+            if freeze_text:
+                for p in self.proj.parameters():
+                    p.requires_grad_(False)
+            logger.info(
+                "concept bank 使用文本向量 %s (冻结=%s)", text_embedding_path, freeze_text
+            )
+        else:
             self.embedding = nn.Parameter(torch.randn(num_regions, embed_dim) * 0.02)
 
     def forward(self) -> torch.Tensor:
@@ -179,8 +186,11 @@ class ClinicalConceptNet(nn.Module):
 
         # 按"该区域被关注的概率"加权聚合,未被关注的概念不该主导表征
         weight = region_logits.sigmoid().unsqueeze(-1)  # (B, R, 1)
-        concept_feat = (region_feat * weight).sum(dim=1) / (
-            weight.sum(dim=1) + 1e-6
+        # clamp 而非 +1e-6:后者在所有 logit 都被推到很负时(某视频没有任何医生
+        # 标注)会破坏加权平均的尺度不变性,把特征模长静默压到接近 0,使这类
+        # 样本的分类器输入分布与正常样本完全不同
+        concept_feat = (region_feat * weight).sum(dim=1) / weight.sum(dim=1).clamp_min(
+            1e-2
         )  # (B, d)
         global_feat = tokens.mean(dim=(2, 3, 4))  # (B, d)
 

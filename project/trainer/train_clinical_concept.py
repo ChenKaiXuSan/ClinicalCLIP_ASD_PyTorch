@@ -36,6 +36,19 @@ from utils.helper import save_helper
 logger = logging.getLogger(__name__)
 
 
+def _average_precision(score: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """免阈值的平均精度,避免 region_f1 的结论被阈值选择左右。"""
+    score = score.flatten()
+    target = target.flatten().float()
+    if target.sum() == 0:
+        return score.new_zeros(())
+    order = torch.argsort(score, descending=True)
+    hit = target[order]
+    tp = torch.cumsum(hit, dim=0)
+    precision = tp / torch.arange(1, len(hit) + 1, device=hit.device, dtype=tp.dtype)
+    return (precision * hit).sum() / target.sum()
+
+
 class ClinicalConceptModule(LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -155,11 +168,24 @@ class ClinicalConceptModule(LightningModule):
         self.test_label_list: list[torch.Tensor] = []
         self.test_region_pred: list[torch.Tensor] = []
         self.test_region_true: list[torch.Tensor] = []
-        self.test_attn_iou: list[torch.Tensor] = []
+        # (对齐得分, 均匀基线, 权重) —— 按权重加权平均,避免长短视频等权
+        self.test_attn_align: list[tuple] = []
 
     @staticmethod
-    def _soft_iou(attn: torch.Tensor, region_map: torch.Tensor, target: torch.Tensor):
-        """模型注意力与医生区域图的软 IoU,只在医生标注过的区域上计算。"""
+    def _attn_alignment(attn: torch.Tensor, region_map: torch.Tensor, target: torch.Tensor):
+        """注意力对齐度:模型注意力分布下,医生图归一化强度的期望值。
+
+            score_r = Σ_n A_r(n) · M̂_r(n),  M̂ = M / max(M)
+
+        为什么不用软 IoU:A 是 softmax 分布,峰值随集中程度上升,峰值归一化后
+        "越集中→有效支撑越小",导致指标非单调——实测均匀注意力得 0.071,而
+        定位正确但更锐的注意力只得 0.036,消融组反而会赢。本式对 A 是线性的:
+        把质量放在医生图强的位置就得高分,与集中程度无关,定位正确的锐注意力
+        趋近 1.0,定位错误趋近 0。
+
+        同时返回均匀注意力的得分作为参照下界(等于 M̂ 的均值),否则单看一个
+        绝对数无法判断好坏。
+        """
         b, r = attn.shape[:2]
         if region_map.shape[2:] != attn.shape[2:]:
             region_map = F.interpolate(
@@ -169,17 +195,20 @@ class ClinicalConceptModule(LightningModule):
 
         a = attn.reshape(b, r, -1)
         m = region_map.reshape(b, r, -1)
-        a = a / a.amax(dim=-1, keepdim=True).clamp_min(1e-6)
         m = m / m.amax(dim=-1, keepdim=True).clamp_min(1e-6)
 
-        inter = torch.minimum(a, m).sum(-1)
-        union = torch.maximum(a, m).sum(-1).clamp_min(1e-6)
-        iou = inter / union
+        score = (a * m).sum(-1)
+        uniform = m.mean(-1)  # 均匀注意力下的期望,即随机基线
 
         weight = target * (m.sum(-1) > 1e-6)
         if weight.sum() <= 0:
             return None
-        return (iou * weight).sum() / weight.sum()
+        denom = weight.sum()
+        return (
+            (score * weight).sum() / denom,
+            (uniform * weight).sum() / denom,
+            denom,
+        )
 
     def test_step(self, batch, batch_idx):
         video = batch["video"].detach()
@@ -210,9 +239,11 @@ class ClinicalConceptModule(LightningModule):
                 outputs["region_logits"].sigmoid().detach().cpu()
             )
             self.test_region_true.append(region_target.cpu())
-            iou = self._soft_iou(outputs["attn"].detach(), region_map.detach(), region_target)
-            if iou is not None:
-                self.test_attn_iou.append(iou.detach().cpu())
+            align = self._attn_alignment(
+                outputs["attn"].detach(), region_map.detach(), region_target
+            )
+            if align is not None:
+                self.test_attn_align.append(tuple(x.detach().cpu() for x in align))
 
     def _fold_name(self) -> str:
         """从 logger 的 root_dir 取折号;fast_dev_run 下 logger 被禁用,root_dir 为 None。"""
@@ -221,19 +252,38 @@ class ClinicalConceptModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         if self.test_region_pred:
-            pred = torch.cat(self.test_region_pred) > 0.5
-            # 软标签 >= 0.5 表示至少一位医生提到该区域
-            true = torch.cat(self.test_region_true) >= 0.5
-            tp = (pred & true).sum().float()
-            precision = tp / pred.sum().clamp_min(1)
-            recall = tp / true.sum().clamp_min(1)
-            f1 = 2 * precision * recall / (precision + recall).clamp_min(1e-6)
-            self.log("test/region_precision", precision, on_epoch=True)
-            self.log("test/region_recall", recall, on_epoch=True)
-            self.log("test/region_f1", f1, on_epoch=True)
+            score = torch.cat(self.test_region_pred)
+            target = torch.cat(self.test_region_true)
 
-        if self.test_attn_iou:
-            self.log("test/attn_iou", torch.stack(self.test_attn_iou).mean(), on_epoch=True)
+            # 软目标下 BCE 的最优解就是 sigmoid==target,"仅一位医生提到"的区域
+            # 最优输出恰好落在 0.5。若用 pred>0.5 判正、true>=0.5 判真,完美模型
+            # 会把这些区域全判成假阴性 —— 阈值必须与目标口径对齐。
+            # "至少一位医生提到" 对应 target>0,判决阈值取 0 与 0.5 的中点。
+            for tag, thr_true, thr_pred in [("any", 0.0, 0.25), ("both", 0.75, 0.75)]:
+                true = target > thr_true
+                pred = score > thr_pred
+                tp = (pred & true).sum().float()
+                precision = tp / pred.sum().clamp_min(1)
+                recall = tp / true.sum().clamp_min(1)
+                f1 = 2 * precision * recall / (precision + recall).clamp_min(1e-6)
+                self.log(f"test/region_f1_{tag}", f1, on_epoch=True)
+                self.log(f"test/region_precision_{tag}", precision, on_epoch=True)
+                self.log(f"test/region_recall_{tag}", recall, on_epoch=True)
+
+            # 免阈值口径:按分数排序的平均精度,不受上面阈值选择影响
+            self.log("test/region_ap", _average_precision(score, target > 0), on_epoch=True)
+
+        if self.test_attn_align:
+            w = torch.stack([x[2] for x in self.test_attn_align])
+            s = torch.stack([x[0] for x in self.test_attn_align])
+            u = torch.stack([x[1] for x in self.test_attn_align])
+            total = w.sum().clamp_min(1e-6)
+            score = (s * w).sum() / total
+            uniform = (u * w).sum() / total
+            self.log("test/attn_align", score, on_epoch=True)
+            # 均匀注意力的得分,作为"零信息"参照;两者之差才是真正学到的对齐
+            self.log("test/attn_align_uniform", uniform, on_epoch=True)
+            self.log("test/attn_align_gain", score - uniform, on_epoch=True)
 
         fold_name = self._fold_name()
         save_helper(
@@ -258,8 +308,26 @@ class ClinicalConceptModule(LightningModule):
             logger.info("saved region predictions to %s", out_path)
 
     def configure_optimizers(self):
+        # log_temperature 和概念库必须免除 weight decay:
+        # - log_temperature 初值 log(1/0.07)=2.66,L2 会以每步约 lr 的确定性拉力
+        #   把它推向 0,几百步后 scale→1,注意力几乎均匀,grounding KL 卡在下界
+        # - 概念库在使用前都会被 F.normalize,模长方向不受任何损失约束,只有
+        #   weight decay 在推它,收缩后五个概念的 query 会互相靠拢
+        no_decay, decay = [], []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "log_temperature" in name or "concepts." in name:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+
         optimizer = torch.optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            [
+                {"params": decay, "weight_decay": self.weight_decay},
+                {"params": no_decay, "weight_decay": 0.0},
+            ],
+            lr=self.lr,
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=self.trainer.estimated_stepping_batches

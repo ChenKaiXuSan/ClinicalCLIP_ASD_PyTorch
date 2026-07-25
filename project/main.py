@@ -44,6 +44,9 @@ from trainer.train_clip_align import CLIPAlignModule
 # clinical concept grounding
 from trainer.train_clinical_concept import ClinicalConceptModule
 
+# pose-only baseline
+from trainer.train_pose import PoseModule
+
 # compare experiment
 from trainer.train_cnn import CNNModule
 
@@ -84,6 +87,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * clinical concept grounding, 推理不需要医生标注
     elif hparams.model.backbone == "concept":
         classification_module = ClinicalConceptModule(hparams)
+    # * 纯姿态基线:注意力图源自骨架,必须回答"只用姿态够不够"
+    elif hparams.model.backbone == "pose":
+        classification_module = PoseModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")
