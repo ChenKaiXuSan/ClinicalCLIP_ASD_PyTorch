@@ -1,6 +1,9 @@
 #!/bin/bash
 # 本机 2×2 对照:概念来源(可学习 / CLIP 文本) × 区域消融(正常 / 打乱)
-# 两张 A6000 各跑 2 个任务。单任务约 5.6GB 显存,48GB 卡放得下。
+#
+# 每张卡同时只跑 1 个任务,分两批。原因:batch 是"一条视频的全部 gait 段",
+# 最长的视频有 838 帧 → 28 段,单任务显存峰值可达 31GB,两个任务挤一张 48GB
+# 的卡必然 OOM(实测 A4 就是这么挂的)。
 set -u
 
 REPO=/home/kaixu_chen/asd/ClinicalCLIP_ASD_PyTorch
@@ -11,23 +14,16 @@ OUT=${OUT:-$REPO/logs/run_concept}
 
 EPOCHS=${EPOCHS:-30}
 FOLD=${FOLD:-0}
-WORKERS=${WORKERS:-6}
+WORKERS=${WORKERS:-10}
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 mkdir -p "$OUT"
 cd "$REPO"
 
-# 名称                          GPU  概念向量  打乱区域
-JOBS=(
-  "A1_learned                    0    none      false"
-  "A2_learned_shuffled           0    none      true"
-  "A3_cliptext                   1    $EMB      false"
-  "A4_cliptext_shuffled          1    $EMB      true"
-)
-
-for job in "${JOBS[@]}"; do
-  read -r NAME GPU EMBED SHUF <<< "$job"
-
-  ARGS=(
+launch() {   # 名称 GPU 概念向量 打乱区域
+  local NAME=$1 GPU=$2 EMBED=$3 SHUF=$4
+  local ARGS=(
     model.backbone=concept
     paths.root_path="$ROOT"
     train.experiment="$NAME"
@@ -38,12 +34,20 @@ for job in "${JOBS[@]}"; do
     data.num_workers="$WORKERS"
   )
   [[ "$EMBED" != "none" ]] && ARGS+=(model.concept_text_embedding="$EMBED")
+  echo "[$(date +%H:%M:%S)] 启动 $NAME (GPU $GPU, shuffle=$SHUF)"
+  "$PY" project/main.py "${ARGS[@]}" > "$OUT/$NAME.log" 2>&1 &
+}
 
-  echo "启动 $NAME  (GPU $GPU, shuffle=$SHUF, 概念=$([[ $EMBED == none ]] && echo 可学习 || echo CLIP文本))"
-  nohup "$PY" project/main.py "${ARGS[@]}" > "$OUT/$NAME.log" 2>&1 &
-  echo "  pid $!"
-  sleep 5   # 错开启动,避免同时抢 torch.hub 缓存
-done
-
+echo "=== 第 1 批 ==="
+launch A1_learned            0 none  false
+launch A3_cliptext           1 "$EMB" false
 wait
-echo "全部任务结束"
+echo "[$(date +%H:%M:%S)] 第 1 批结束"
+
+echo "=== 第 2 批 ==="
+launch A2_learned_shuffled   0 none  true
+launch A4_cliptext_shuffled  1 "$EMB" true
+wait
+echo "[$(date +%H:%M:%S)] 第 2 批结束"
+
+echo "全部完成"
