@@ -131,3 +131,6 @@ MNIST
 logs/
 # 本机实验日志
 logs/
+
+# 提交时固化的作业清单,每次提交都会新生成
+pegasus/queue/

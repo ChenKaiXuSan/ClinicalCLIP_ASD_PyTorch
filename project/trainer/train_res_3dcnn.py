@@ -211,8 +211,9 @@ class SingleModule(LightningModule):
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
+                # verbose 在 torch 2.7 已被移除,带上它在超算环境会直接 TypeError
                 "scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=self.trainer.estimated_stepping_batches, verbose=True, 
+                    optimizer, T_max=self.trainer.estimated_stepping_batches,
                 ),
                 "monitor": "train/loss",
             },

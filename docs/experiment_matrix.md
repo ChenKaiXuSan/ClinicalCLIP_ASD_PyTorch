@@ -1,6 +1,13 @@
 # 实验矩阵
 
-配置在 `pegasus/matrix.tsv`,执行用 `pegasus/run_matrix.sh`(双卡作业队列,某张卡空出来就取下一个任务)。
+配置在 `pegasus/matrix.tsv`(唯一的真源,本机和超算共用)。执行有两条路:
+
+| 环境 | 脚本 | 并行方式 |
+|---|---|---|
+| 本机双 A6000 | `pegasus/run_matrix.sh` | 双卡作业队列,某张卡空出来就取下一个任务 |
+| Pegasus 超算 | `pegasus/submit_matrix.sh` | PBS 数组作业,**一个节点跑一个配置的一折** |
+
+超算的完整操作步骤见文末「在 Pegasus 上执行」。
 
 ## 统一设定
 
@@ -68,20 +75,70 @@ bf16 实测 GPU 计算快 **1.56 倍**、显存 7.6→4.9 GB。由于 GPU 利用
 
 ## 建议的执行阶段
 
-| 阶段 | 命令 | 任务数 | 双卡耗时 (fp32 / bf16) |
-|---|---|---|---|
-| ① 单折筛选 | `GROUP=all FOLDS=0 bash pegasus/run_matrix.sh` | 14 | 2.4 天 / 1.5 天 |
-| ② 五折主表 | `GROUP=baseline,main bash pegasus/run_matrix.sh` | 35 | 5.2 天 / 3.3 天 |
-| ③ 五折消融 | `GROUP=ablation,annotator bash pegasus/run_matrix.sh` | 35 | 6.1 天 / 3.9 天 |
-| **全矩阵** | `GROUP=all bash pegasus/run_matrix.sh` | **70** | **11.3 天 / 7.2 天** |
-| ④ 三种子方差(可选) | `GROUP=main SEEDS=42,1337,2024 ...` | 30 | 5.2 天 / 3.3 天 |
+| 阶段 | GROUP / FOLDS | 任务数 | 本机双卡耗时 (fp32 / bf16) | Pegasus 节点数 |
+|---|---|---|---|---|
+| ① 单折筛选 | `GROUP=all FOLDS=0` | 14 | 2.4 天 / 1.5 天 | 14 |
+| ② 五折主表 | `GROUP=baseline,main` | 35 | 5.2 天 / 3.3 天 | 35 |
+| ③ 五折消融 | `GROUP=ablation,annotator` | 35 | 6.1 天 / 3.9 天 | 35 |
+| **全矩阵** | `GROUP=all` | **70** | **11.3 天 / 7.2 天** | **70** |
+| ④ 三种子方差(可选) | `GROUP=main SEEDS=42,1337,2024` | 30 | 5.2 天 / 3.3 天 | 30 |
 
-100 epochs 让单次从 2.5 小时涨到 8.3 小时,全矩阵是 **11.3 天**(fp32)或 **7.2 天**(bf16)。
+本机跑全矩阵是 **11.3 天**(fp32)或 **7.2 天**(bf16);超算上 70 个节点并发,墙钟时间只受排队影响。
 两点建议:
 
 1. **先跑阶段 ①**(单折,全部 14 个配置)。它的作用不是出结论,而是确认每个配置都能跑通、
    100 epochs 是否过拟合、哪些配置值得进全量。直接上全矩阵的风险是某个配置有问题、一周算力白费。
-2. **全矩阵建议开 `PRECISION=bf16-mixed`**,省 4 天。但整个矩阵必须用同一精度,不能混。
+2. **全矩阵建议开 `PRECISION=bf16-mixed`**(超算脚本已是默认)。但整个矩阵必须用同一精度,不能混。
+
+## 在 Pegasus 上执行
+
+节点规格实测:**H100 PCIe 80GB / 48 核 / 单请求上限 24 小时**(队列硬上限,`qstat -Q -f gpu`)。
+一折 100 epochs 在 A6000 上是 5.3 小时(bf16),H100 只会更快,所以**一个节点跑一折**留了充足余量。
+一个批处理请求最多 150 个 sub-request,70 个任务一次提交得下。
+
+计算节点**有外网**,走预设的 HTTP 代理(`http_proxy=http://10.120.96.1:8080`,DNS 直连不通但代理正常),
+所以 torch.hub / HuggingFace 在节点上也能下载。即便如此,权重仍建议在登录节点预热一次
+(`prepare_torchhub.sh`),避免 70 个作业同时穿代理下同一份权重。
+
+### 一次性准备
+
+```bash
+bash pegasus/prepare_index.sh      # 交叉验证划分对齐到 5 折(旧缓存自动备份)
+bash pegasus/prepare_concepts.sh   # M1 需要的 CLIP 文本概念向量(要装 transformers)
+bash pegasus/prepare_torchhub.sh   # slow_r50 与 resnet50 预训练权重灌进 torch hub 缓存
+qsub  pegasus/smoke_test.sh        # 一个节点上把 14 个配置各跑一个 batch,10 分钟暴露配置问题
+```
+
+`prepare_index.sh` 不是可选步骤。`cross_validation.py` 只要发现 `index_mapping/3/` 存在就直接加载,
+`train.fold` 改了也不会重新划分 —— Pegasus 上原先缓存的是 **10 折**(train 1711 / val 179),
+不换掉的话 `train.folds=[0..4]` 会训在 10 折的划分上,和上面的表完全对不上。
+旧缓存被移到 `index_mapping/3.bak.10fold/`,随时可以换回来。`submit_matrix.sh` 提交前会检查折数,
+对不上直接拒绝提交。
+
+### 提交
+
+```bash
+GROUP=all FOLDS=0 bash pegasus/submit_matrix.sh    # ① 单折筛选,14 个节点
+GROUP=baseline,main bash pegasus/submit_matrix.sh  # ② 五折主表,35 个节点
+GROUP=all bash pegasus/submit_matrix.sh            # 全矩阵,70 个节点
+DRYRUN=1 GROUP=all bash pegasus/submit_matrix.sh   # 只看清单不提交
+```
+
+提交脚本把作业清单固化到 `pegasus/queue/<时间戳>.part0.tsv`,数组作业按 `PBS_SUBREQNO` 取自己那一行。
+清单和运行参数在提交那一刻就冻结了,之后再改 `matrix.tsv` 不影响已排队的作业。
+
+**断点续跑**:每个任务成功后在 `logs/pegasus/matrix/done/<tag>.done` 落一个标记。
+把同一条提交命令再敲一遍,已完成的会被剔除,只有失败/没跑到的重新排队;要强制全部重跑加 `FORCE=1`。
+
+单个任务的实时日志在 `logs/pegasus/matrix/<tag>.log`(tag 形如 `M0_concept_learned__f2_s42`)。
+
+### 可解释性对照
+
+```bash
+qsub pegasus/run_attn_alignment.sh   # 需要 B0_3dcnn 至少训完一折(脚本自动找 checkpoint)
+```
+
+一次跑出 `uniform` / `random` / `center` 三个下界外加 Grad-CAM,不需要训练,约 2 小时。
 
 ## 读结果时必须注意
 

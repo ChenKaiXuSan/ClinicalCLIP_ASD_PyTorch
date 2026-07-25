@@ -37,7 +37,9 @@ analysis/run_tsne.sh
 
 数据根目录下 `clinical_CLIP_dataset/` 的子目录:`json_mix/<疾病>/*.json`(每段视频的元信息)、`video/`(MP4)、`doctor_result/doctor{1,2}.csv`(医生关注区域)、`seg_skeleton_pkl/whole_annotations.pkl`(骨架关键点)、`index_mapping/<class_num>/index.json`(交叉验证划分缓存)。
 
-**缓存陷阱**:`index.json` 存的是生成时环境的绝对路径(当前是 `/workspace/data/...` 前缀)。`cross_validation.py` 只要发现缓存存在就直接加载,换机器必须先 sed 替换前缀或删缓存重建(重建会改变折划分,影响与旧实验的可比性)。
+**缓存陷阱**:`index.json` 存的是生成时环境的绝对路径。`cross_validation.py` 只要发现 `index_mapping/<class_num>/` 存在就直接加载,**`train.fold` 改了也不会重新划分**,换机器必须先 sed 替换前缀或删缓存重建。Pegasus 上用 `pegasus/prepare_index.sh` 处理(旧缓存备份到 `3.bak.<折数>fold/`,不删);它已把超算上原先的 10 折缓存换成了矩阵要求的 5 折。
+
+划分本身是确定的:同样的 `train.fold=5` 在本机和超算上重建出的每折规模完全一致(1480/410、1510/380、1479/411、1506/384、1510/380),所以跨机器的实验仍可比。
 
 ## 架构
 
@@ -82,8 +84,17 @@ GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 1
 ## 实验统一设定
 
 **5 折、100 epochs、无 early stopping**(`train.fold: 5`、`train.max_epochs: 100`)。
-矩阵见 `docs/experiment_matrix.md`,执行用 `pegasus/run_matrix.sh`(双卡作业队列)。
+矩阵见 `docs/experiment_matrix.md`,配置的真源是 `pegasus/matrix.tsv`(本机与超算共用)。
 单次实测:视频类 8.3 小时(fp32)/ 5.3 小时(bf16-mixed),姿态类约 0.7 小时。
+
+执行有两条路,同一份 `matrix.tsv`:
+
+- 本机双 A6000:`pegasus/run_matrix.sh`,双卡作业队列,某张卡空出来就取下一个任务。
+- Pegasus 超算:`pegasus/submit_matrix.sh` 提交 PBS 数组作业,**一个节点跑一个配置的一折**
+  (节点 H100 80GB / 48 核,队列单请求硬上限 24 小时,一批最多 150 个 sub-request)。
+  首次要先跑 `prepare_index.sh`(折数对齐)、`prepare_concepts.sh`(M1 的文本向量)、
+  `prepare_torchhub.sh`(预训练权重),再 `qsub pegasus/smoke_test.sh` 自检链路。
+  计算节点有外网,走预设的 HTTP 代理(`http_proxy=http://10.120.96.1:8080`),DNS 直连不通。
 
 ⚠ `magic_move` 造成患者级泄漏:5/5 折、46.8% 的验证样本来自训练见过的患者,
 且只发生在 DHS 与 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称抬高。

@@ -20,6 +20,7 @@ Date      	By	Comments
 ----------	---	---------------------------------------------------------
 """
 
+import inspect
 import logging
 import os
 
@@ -148,11 +149,18 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 
     # the validate method will wirte in the same log twice, so use the test method.
     # fast_dev_run 下不写 checkpoint,只能用当前权重
+    # weights_only 是 lightning 2.5.3 才加的参数。checkpoint 里存了 hydra 的 DictConfig,
+    # torch 2.6+ 默认的 weights_only=True 反序列化不了;老版本 lightning 内部本就默认 False,
+    # 不传即可 —— 超算上装的正是 2.5.2,硬传会 TypeError。
+    test_kwargs = {}
+    if "weights_only" in inspect.signature(trainer.test).parameters:
+        test_kwargs["weights_only"] = False
+
     test_metrics = trainer.test(
         classification_module,
         data_module,
         ckpt_path=None if trainer.fast_dev_run else "best",
-        weights_only=False,
+        **test_kwargs,
     )
 
     if not trainer.fast_dev_run:
