@@ -48,6 +48,9 @@ class WalkDataModule(LightningDataModule):
         self._experiment = opt.train.experiment
         self._attn_map = opt.train.attn_map
         self._med_attn_map: Optional[MedAttnMap] = None
+        # concept 架构需要按区域拆开的 grounding 目标
+        self._region_supervision = opt.model.backbone == "concept"
+        self._region_map_size = getattr(opt.model, "region_map_size", 28)
 
         self.train_video_transform = Compose(
             [
@@ -99,6 +102,8 @@ class WalkDataModule(LightningDataModule):
                 img_size=self._img_size,
                 num_samples=self.uniform_temporal_subsample_num,
                 attn_map=self._med_attn_map,
+                region_supervision=self._region_supervision,
+                region_map_size=self._region_map_size,
                 clip_duration=self._clip_duration,
             )
 
@@ -137,6 +142,8 @@ class WalkDataModule(LightningDataModule):
         batch_label = []
         batch_video = []
         batch_attn_map = []
+        batch_region_map = []
+        batch_region_target = []
 
         for i in batch:
             gait_num, *_ = i["video"].shape
@@ -144,6 +151,13 @@ class WalkDataModule(LightningDataModule):
 
             batch_video.append(i["video"])
             batch_attn_map.append(i["attn_map"])
+
+            if "region_map" in i:
+                batch_region_map.append(i["region_map"])
+                # 区域标签是场次级的,展开到该视频的每个 gait 段
+                batch_region_target.append(
+                    i["region_target"].unsqueeze(0).expand(gait_num, -1)
+                )
 
             for _ in range(gait_num):
                 if disease in DISEASE_TO_NUM_MAPPING[self._class_num].keys():
@@ -160,17 +174,27 @@ class WalkDataModule(LightningDataModule):
                         DISEASE_TO_NUM_MAPPING[self._class_num]["non-ASD"]
                     )
 
-        return {
+        out = {
             "video": torch.cat(batch_video, dim=0),
             "label": torch.tensor(batch_label),
             "attn_map": torch.cat(batch_attn_map, dim=0),
             # 只带元信息:原先整个 batch 连 video/attn 张量一起放进来,等于让同样
             # 的数据再穿一次 worker→主进程的 IPC
             "info": [
-                {k: v for k, v in i.items() if k not in ("video", "attn_map")}
+                {
+                    k: v
+                    for k, v in i.items()
+                    if k not in ("video", "attn_map", "region_map", "region_target")
+                }
                 for i in batch
             ],
         }
+
+        if batch_region_map:
+            out["region_map"] = torch.cat(batch_region_map, dim=0)
+            out["region_target"] = torch.cat(batch_region_target, dim=0)
+
+        return out
 
     def _dataloader(self, dataset, shuffle: bool, drop_last: bool) -> DataLoader:
         return DataLoader(

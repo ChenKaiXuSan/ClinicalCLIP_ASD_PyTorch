@@ -41,6 +41,9 @@ from dataloader.data_loader import WalkDataModule
 # CLIP-style alignment
 from trainer.train_clip_align import CLIPAlignModule
 
+# clinical concept grounding
+from trainer.train_clinical_concept import ClinicalConceptModule
+
 # compare experiment
 from trainer.train_cnn import CNNModule
 
@@ -77,6 +80,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * CLIP alignment
     elif hparams.model.backbone == "clip":
         classification_module = CLIPAlignModule(hparams)
+    # * clinical concept grounding, 推理不需要医生标注
+    elif hparams.model.backbone == "concept":
+        classification_module = ClinicalConceptModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")

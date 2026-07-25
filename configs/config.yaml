@@ -14,6 +14,11 @@ loss:
   clip_weight: 1.0
   clip_temperature: 0.07
 
+  # concept 架构:分类 + 区域存在性 + 空间 grounding + 概念对比
+  presence_weight: 1.0
+  grounding_weight: 1.0
+  concept_weight: 0.1
+
 paths:
   root_path: /workspace/data
 
@@ -52,6 +57,15 @@ model:
   map_guided_alpha: 1.0
   map_guided_sigmoid_gate: false
   lambda_token: 0.0
+
+  # ---- clinical concept grounding (backbone=concept) ----
+  concept_embed_dim: 256
+  concept_temperature: 0.07
+  # 外部预计算的文本概念向量 (R x dim, 顺序同 REGIONS)，留空则用可学习概念
+  concept_text_embedding: null
+  concept_freeze_text: true
+  region_map_size: 28 # grounding 目标图的空间分辨率
+  shuffle_region: false # 消融: 打乱区域标注, 检验增益是否来自临床知识
 
 train:
   # Training config

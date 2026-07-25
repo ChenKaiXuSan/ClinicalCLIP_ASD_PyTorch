@@ -137,6 +137,8 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         doctor_res_path: str = "",
         skeleton_path: str = "",
         attn_map: Optional[MedAttnMap] = None,
+        region_supervision: bool = False,
+        region_map_size: int = 28,
     ) -> None:
         super().__init__()
 
@@ -144,6 +146,9 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         self._experiment = experiment
         self._img_size = img_size
         self._num_samples = num_samples
+        # 概念架构走 grounding 监督:按区域拆开的低分辨率图 + 区域软标签
+        self._region_supervision = region_supervision
+        self._region_map_size = region_map_size
 
         # 优先复用外部传入的实例:骨架 pkl 有 97MB,train/val/test 各建一份纯属浪费
         if attn_map is not None:
@@ -214,7 +219,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         )
         attn = attn.permute(0, 2, 1, 3, 4).contiguous()
 
-        return {
+        sample = {
             "video": video,
             "label": file_info_dict["label"],
             "attn_map": attn,
@@ -222,6 +227,20 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
             "video_name": video_name,
             "video_index": index,
         }
+
+        if self._region_supervision and self.attn_map is not None:
+            size = (self._region_map_size, self._region_map_size)
+            region_map = self.attn_map.build_regions(
+                video_name=video_name, frame_idx=wanted, out_size=size
+            )
+            region_map = region_map.index_select(0, inverse).view(
+                n_chunks, self._num_samples, *region_map.shape[1:]
+            )
+            # (n_chunks, R, T, H, W),与 token 的 (B, d, T', H', W') 对齐
+            sample["region_map"] = region_map.permute(0, 2, 1, 3, 4).contiguous()
+            sample["region_target"] = self.attn_map.presence_for(video_name)
+
+        return sample
 
 
 def whole_video_dataset(
@@ -232,6 +251,8 @@ def whole_video_dataset(
     doctor_res_path: str = "",
     skeleton_path: str = "",
     attn_map: Optional[MedAttnMap] = None,
+    region_supervision: bool = False,
+    region_map_size: int = 28,
     clip_duration: int = 1,
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
@@ -242,4 +263,6 @@ def whole_video_dataset(
         doctor_res_path=doctor_res_path,
         skeleton_path=skeleton_path,
         attn_map=attn_map,
+        region_supervision=region_supervision,
+        region_map_size=region_map_size,
     )

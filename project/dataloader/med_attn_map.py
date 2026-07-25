@@ -47,6 +47,9 @@ REGION_TO_KEYPOINTS: Dict[str, List[int]] = {
     "head": [0, 1, 2, 3, 4],
 }
 
+# 概念库的固定顺序,模型侧的 region 维度按此对齐
+REGIONS: List[str] = ["foot", "wrist", "shoulder", "lumbar_pelvis", "head"]
+
 
 class MedAttnMap:
 
@@ -57,6 +60,7 @@ class MedAttnMap:
         # 两个查找都是对全表的子串匹配(骨架表 2277 条),按 video_name 记忆化
         self._keypoint_cache: Dict[str, set] = {}
         self._skeleton_cache: Dict[str, Any] = {}
+        self._presence_cache: Dict[str, torch.Tensor] = {}
 
     @staticmethod
     def _load_doctor_res(doctor_res_path: str) -> list[list[dict[str, str]]]:
@@ -131,13 +135,23 @@ class MedAttnMap:
             (F, 1, H, W)
         """
         height, width = out_size
-        num_frames = int(frame_idx.numel())
-
         annotation = self.skeleton_for(video_name)
         keypoints = sorted(self.keypoints_for(video_name))
+        attn = self._render(annotation, keypoints, frame_idx, height, width)
+        return attn.unsqueeze(1)
 
+    def _render(
+        self,
+        annotation,
+        keypoints: List[int],
+        frame_idx: torch.Tensor,
+        height: int,
+        width: int,
+    ) -> torch.Tensor:
+        """把一组关键点渲染成逐帧高斯图,(F, H, W)。关键点为空时返回全零。"""
+        num_frames = int(frame_idx.numel())
         if annotation is None or not keypoints:
-            return torch.zeros((num_frames, 1, height, width))
+            return torch.zeros((num_frames, height, width))
 
         keypoint = torch.as_tensor(annotation["keypoint"], dtype=torch.float32)
         score = torch.as_tensor(annotation["keypoint_score"], dtype=torch.float32)
@@ -165,8 +179,69 @@ class MedAttnMap:
         gy = torch.exp(-((y_range - y[..., None]) ** 2) / denom)  # (F, K, H)
         gy = gy * scale[..., None]
 
-        attn = torch.einsum("fkh,fkw->fhw", gy, gx) / len(keypoints)
-        return attn.unsqueeze(1)
+        return torch.einsum("fkh,fkw->fhw", gy, gx) / len(keypoints)
+
+    def regions_per_doctor(self, video_name: str) -> List[set]:
+        """每位医生各自标注的区域集合,不做并集——两位医生只有 45.7% 一致,
+        分歧本身是信息,合并会把它丢掉。"""
+        per_doctor: List[set] = []
+        for one_doctor in self.doctor_res:
+            regions = {
+                row["attention"][2:-6]
+                for row in one_doctor
+                if row["video file name"] in video_name
+            }
+            if regions:
+                per_doctor.append(regions)
+        return per_doctor
+
+    def presence_for(self, video_name: str) -> torch.Tensor:
+        """区域软标签 (R,):第 r 位取值为"选择该区域的医生占比"。
+
+        两位医生一致时为 1.0,只有一人选时为 0.5,借此把标注分歧显式建模成
+        软目标,而不是让并集把 0.5 抬成 1.0。
+        """
+        if video_name not in self._presence_cache:
+            per_doctor = self.regions_per_doctor(video_name)
+            target = torch.zeros(len(REGIONS))
+            if per_doctor:
+                for i, region in enumerate(REGIONS):
+                    hit = sum(1 for regions in per_doctor if region in regions)
+                    target[i] = hit / len(per_doctor)
+            self._presence_cache[video_name] = target
+        return self._presence_cache[video_name]
+
+    def build_regions(
+        self,
+        video_name: str,
+        frame_idx: torch.Tensor,
+        out_size: tuple[int, int],
+    ) -> torch.Tensor:
+        """按概念逐个渲染,(F, R, H, W),用作 grounding 损失的空间目标。
+
+        只渲染至少一位医生提到的区域,其余留零——grounding 项本来也只在
+        软标签非零的区域上生效。分辨率通常取 token 级(如 28),开销可忽略。
+        """
+        height, width = out_size
+        annotation = self.skeleton_for(video_name)
+        presence = self.presence_for(video_name)
+
+        maps = []
+        for i, region in enumerate(REGIONS):
+            if presence[i] > 0:
+                maps.append(
+                    self._render(
+                        annotation,
+                        REGION_TO_KEYPOINTS[region],
+                        frame_idx,
+                        height,
+                        width,
+                    )
+                )
+            else:
+                maps.append(torch.zeros((int(frame_idx.numel()), height, width)))
+
+        return torch.stack(maps, dim=1)
 
     @staticmethod
     def _generate_attention_map(

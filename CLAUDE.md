@@ -50,8 +50,22 @@ analysis/run_tsne.sh
    - `whole_video_dataset.LEGACY_ATTN_DIV255`:旧实现让 video 和 attn 共用同一个 Compose,其中 `Div255` 也除在了本就 [0,1] 的高斯图上。模型里 `downsample_attn_to_tokens` 会做 min-max 归一化基本抵消掉,但 `ChannelMapGuidedVideoEncoder` 直接把原始均值喂进 MLP,尺度有影响。目前保持与既有实验一致,重设计实验时可考虑改成 False。
 4. **模型** `project/models/clip_align.py` `VideoAttentionCLIP`:视频编码器 = slow_r50 预训练 ResNet3D,`map_guided_type` 三选一(`spatiotemporal` token 门控+注意力池化 / `channel` MLP 通道门控 / `weighted_pool` 仅加权池化);注意图编码器 = 1 通道 ResNet3D(不预训练);两路 `ClipProjectionHead` 输出归一化 embedding 做 InfoNCE(可学习温度);分类头按 `clip_classifier_source`(默认 video)取特征。
 5. **训练** `project/trainer/train_clip_align.py` `CLIPAlignModule`:`loss = CE + clip_weight×InfoNCE + lambda_token×token能量对齐`;test 阶段额外计算 video↔attn 检索 R@1/R@5、对齐相似度 gap/corr,并把 embeddings 存为 `.pt`。
-6. **backbone 分发**在 `main.py`:`model.backbone` = `clip` | `3dcnn` | `cnn_lstm` | `2dcnn` 对应 `trainer/` 下四个模块,后三者是基线对比,共用 `models/make_model.py`。
+6. **backbone 分发**在 `main.py`:`model.backbone` = `concept` | `clip` | `3dcnn` | `cnn_lstm` | `2dcnn` 对应 `trainer/` 下五个模块,后三者是基线对比,共用 `models/make_model.py`。
 7. **输出**:`logs/train/<experiment>/<日期>/<时刻>/{tensorboard,csv,checkpoint/<fold>,embeddings,test_metrics.txt}`。
+
+## 两套架构的区别(重要)
+
+`model.backbone=clip`(`models/clip_align.py`)把医生注意力图当作第二个模态,推理时也要输入,用批内 InfoNCE 对齐。`model.backbone=concept`(`models/clinical_concept.py`,架构图 `docs/clinical_concept_architecture.drawio`)把医生标注降格为训练期监督,推理只输入视频。
+
+改动依据是这三条数据事实(脚本可复现,见 git 历史中的分析):
+
+- 关注区域单独预测疾病的准确率 **66.7%,恰好等于多数类基线**——它不是能独立分类的模态,而是先验;`clip_classifier_source="attn"` 这条路是死的。
+- 全库只有 **6 种不同的区域组合**(5 个区域,60% 是 lumbar_pelvis),批内 InfoNCE 会把临床标注完全相同的样本当负例推开,假负例极多。
+- 两位医生 **仅 45.7% 一致**,标注该按软目标处理(`presence_for` 返回 0/0.5/1),不该像旧代码那样取并集把 0.5 抬成 1.0。
+
+concept 架构的四项损失见 `models/clinical_concept.py`:分类 CE、区域存在性软 BCE、空间 grounding(KL,按软标签加权)、概念对比(负例是另外 4 个概念而非批内样本)。测试期额外产出 `region_f1` 与 `attn_iou` 两个可解释性指标——这是模型的**预测量**,可与留出的医生标注对分。
+
+`model.shuffle_region=true` 是核心消融:沿区域维度逐样本置换,等价于"同一副骨架、换一个区域"。若指标不掉,说明增益来自姿态渲染而非临床知识,论文主张不成立。注意不能在 batch 维度打乱——`batch_size=1` 时一个 batch 全是同一条视频的 gait 段,区域标签本来就相同。
 
 ## 已知坑与过时文档
 
