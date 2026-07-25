@@ -185,6 +185,11 @@ class CLIPAlignModule(LightningModule):
 
         # return probs, logits
 
+    def _fold_name(self) -> str:
+        """从 logger 的 root_dir 取折号;fast_dev_run 下 logger 被禁用,root_dir 为 None。"""
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
+
     def on_test_epoch_end(self) -> None:
         """hook function for test epoch end"""
 
@@ -248,7 +253,7 @@ class CLIPAlignModule(LightningModule):
         save_helper(
             all_pred=self.test_pred_list,
             all_label=self.test_label_list,
-            fold=self.logger.root_dir.split("/")[-1] if self.logger else "fold",
+            fold=self._fold_name(),
             save_path=self.save_root,
             num_class=self.num_classes,
         )
@@ -258,7 +263,7 @@ class CLIPAlignModule(LightningModule):
             and self.test_attn_embed_list
             and self.test_label_list
         ):
-            fold_name = self.logger.root_dir.split("/")[-1] if self.logger else "fold"
+            fold_name = self._fold_name()
             emb_save_path = Path(self.save_root) / "embeddings"
             emb_save_path.mkdir(parents=True, exist_ok=True)
 

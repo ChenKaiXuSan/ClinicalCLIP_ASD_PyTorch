@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+from collections import Counter
 from pathlib import Path
 
 METRIC_KEYS = [
@@ -30,6 +31,52 @@ METRIC_KEYS = [
     "test/attn_iou",
     "test/loss",
 ]
+
+
+def posthoc_metrics(exp_dir: Path) -> dict | None:
+    """从 save_helper 存下的原始预测补算各口径指标。
+
+    训练时记录的 test/video_acc 走 torchmetrics 默认的 macro 平均,即平衡准确率,
+    多数类预测器只得 1/C。单看这一个数容易误读成普通准确率,所以这里一并给出
+    micro(样本级)口径、逐类召回,以及"全预测多数类"的两种基线。
+
+    从预测文件补算而非在训练里多记指标,是为了让先后两批跑的实验口径完全一致。
+    """
+    import torch
+
+    preds, labels = [], []
+    for pred_file in sorted(exp_dir.rglob("best_preds/*_pred.pt")):
+        label_file = pred_file.with_name(pred_file.name.replace("_pred.pt", "_label.pt"))
+        if not label_file.exists():
+            continue
+        preds.append(torch.load(pred_file, map_location="cpu", weights_only=False))
+        labels.append(torch.load(label_file, map_location="cpu", weights_only=False))
+
+    if not preds:
+        return None
+
+    prob = torch.cat(preds).float()
+    label = torch.cat(labels).long()
+    pred = prob.argmax(dim=1)
+    num_class = prob.shape[1]
+
+    recalls = []
+    for c in range(num_class):
+        mask = label == c
+        recalls.append(float((pred[mask] == c).float().mean()) if mask.any() else float("nan"))
+
+    counts = Counter(label.tolist())
+    majority = max(counts.values()) / len(label)
+
+    return {
+        "acc_macro": sum(r for r in recalls if r == r) / max(sum(1 for r in recalls if r == r), 1),
+        "acc_micro": float((pred == label).float().mean()),
+        "per_class_recall": recalls,
+        "baseline_macro": 1.0 / num_class,
+        "baseline_micro": majority,
+        "n_sample": int(label.numel()),
+        "class_count": {int(k): int(v) for k, v in sorted(counts.items())},
+    }
 
 
 def load_run(exp_dir: Path) -> list[dict]:
@@ -80,6 +127,24 @@ def main() -> None:
             row[key] = sum(vals) / len(vals) if vals else float("nan")
         summary[name] = {"n_fold": len(runs), **row}
         print(f"{name:32s}" + "".join(f"{row[k]:16.4f}" for k in METRIC_KEYS))
+
+    print("\n注:上表 video_acc 为 macro 平均(平衡准确率),多数类预测器基线 1/C,"
+          "不是类别占比。")
+
+    # 从原始预测补算各口径,避免只看一个数被误读
+    print("\n=== 各口径准确率(由 best_preds 补算)===")
+    for name in summary:
+        extra = posthoc_metrics(root / name)
+        if extra is None:
+            print(f"{name:32s} (没有 best_preds,跳过)")
+            continue
+        summary[name]["posthoc"] = extra
+        per_class = " ".join(f"{r:.3f}" for r in extra["per_class_recall"])
+        print(
+            f"{name:32s} macro {extra['acc_macro']:.4f} (基线 {extra['baseline_macro']:.3f}) | "
+            f"micro {extra['acc_micro']:.4f} (基线 {extra['baseline_micro']:.3f}) | "
+            f"逐类召回 {per_class} | n={extra['n_sample']}"
+        )
 
     # 消融对照:同名去掉 _shuffled 的两个实验配对
     print("\n=== 区域消融对照 (正常 vs 打乱区域) ===")

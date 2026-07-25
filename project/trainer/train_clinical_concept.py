@@ -54,6 +54,10 @@ class ClinicalConceptModule(LightningModule):
 
         self.model = ClinicalConceptNet(hparams)
 
+        # torchmetrics 默认 average="macro":这里的 video_acc 是**平衡准确率**
+        # (各类召回的均值),多数类预测器只得 1/num_classes 而非类别占比。
+        # 论文里不要写成 accuracy。逐类与 micro 口径由
+        # analysis/compare_concept_runs.py 从保存的预测中补算。
         self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
         self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
 
