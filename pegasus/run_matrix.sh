@@ -25,7 +25,7 @@ FOLDS=${FOLDS:-0-4}          # 全库统一 5 折;也可写 "0" 或 "0,3"
 SEEDS=${SEEDS:-42}
 EPOCHS=${EPOCHS:-100}   # 统一 100 epochs, 不用 early stopping
 WORKERS=${WORKERS:-10}
-PRECISION=${PRECISION:-32-true}
+PRECISION=${PRECISION:-bf16-mixed}   # 实测比 fp32 快 1.56x、显存 7.6->4.9GB
 GPUS=${GPUS:-0 1}
 OUT=${OUT:-$REPO/logs/matrix}
 DRYRUN=${DRYRUN:-0}
@@ -51,18 +51,25 @@ want_group() {
   [[ ",$GROUP," == *",$1,"* ]]
 }
 
-# ---- 构建作业队列 ----
-declare -a JOBS=()
+# ---- 构建作业队列(折优先排序)----
+# 先把所有配置的 fold0 跑完,再进 fold1。这样第一轮结束就能拿到一份完整的
+# 跨配置对比,某个配置有问题也能尽早发现,不必等它把 5 折全跑完。
+declare -a NAMES=() ARGSS=()
 while IFS=$'\t' read -r grp name args; do
   [[ -z "${grp:-}" || "$grp" == \#* ]] && continue
   want_group "$grp" || continue
-  args=${args//EMB/$EMB}
-  for fold in $(expand_folds "$FOLDS"); do
-    for seed in ${SEEDS//,/ }; do
-      JOBS+=("${name}__f${fold}_s${seed}|$args|$fold|$seed")
+  NAMES+=("$name")
+  ARGSS+=("${args//EMB/$EMB}")
+done < pegasus/matrix.tsv
+
+declare -a JOBS=()
+for fold in $(expand_folds "$FOLDS"); do
+  for seed in ${SEEDS//,/ }; do
+    for i in "${!NAMES[@]}"; do
+      JOBS+=("${NAMES[$i]}__f${fold}_s${seed}|${ARGSS[$i]}|$fold|$seed")
     done
   done
-done < pegasus/matrix.tsv
+done
 
 echo "队列共 ${#JOBS[@]} 个任务 (GROUP=$GROUP FOLDS=$FOLDS SEEDS=$SEEDS EPOCHS=$EPOCHS)"
 if [[ "$DRYRUN" == "1" ]]; then
