@@ -44,7 +44,7 @@ analysis/run_tsne.sh
 流程图见 `docs/clinicalclip_pipeline.drawio`。核心链路:
 
 1. **入口** `project/main.py`:Hydra 加载配置 → `DefineCrossValidation()` 返回 `{fold: {train: [json路径], val: [json路径]}}` → 逐折调用 `train()`,每折独立 fit + test。
-2. **交叉验证** `project/cross_validation.py`:`StratifiedGroupKFold(K=10)` 按患者名分组防泄漏;过滤含 "HipOA" 的患者名(FIXME 数据不均衡);`magic_move` 在 train/val 间交换非 ASD 患者;结果缓存到 `index_mapping/`。
+2. **交叉验证** `project/cross_validation.py`:`StratifiedGroupKFold(K=5)` 按患者名分组防泄漏;过滤含 "HipOA" 的患者名(FIXME 数据不均衡);`magic_move` 在 train/val 间交换非 ASD 患者;结果缓存到 `index_mapping/`。
 3. **数据** `project/dataloader/`:采样计划先行——`_plan_frame_index` 先按"每秒一段、每段均匀取 8 帧"算出最终保留的全局帧下标,再只解码这些帧(`_decode_selected` 跳过无用帧的 rgb24 转换)、只为这些帧生成注意力图(`MedAttnMap.build` 用可分离高斯做批量矩阵乘,直接在 224 上生成)。视频路径按 `json_mix/` → `video/` 前缀重映射,不用 json 里写死的旧绝对路径。`collate_fn` 把一条视频的所有段沿 batch 维拼接,所以 `batch_size=1` 时实际 batch 是段数。
    - 改这部分时注意保持采样语义:`_plan_frame_index` 必须与 `UniformTemporalSubsample` 的 `round(linspace(0, L-1, n))` 一致,段长不足时靠重复帧补齐。
    - `whole_video_dataset.LEGACY_ATTN_DIV255`:旧实现让 video 和 attn 共用同一个 Compose,其中 `Div255` 也除在了本就 [0,1] 的高斯图上。模型里 `downsample_attn_to_tokens` 会做 min-max 归一化基本抵消掉,但 `ChannelMapGuidedVideoEncoder` 直接把原始均值喂进 MLP,尺度有影响。目前保持与既有实验一致,重设计实验时可考虑改成 False。
@@ -78,6 +78,16 @@ concept 架构的四项损失见 `models/clinical_concept.py`:分类 CE、区域
 batch 是"一条视频的全部 gait 段",最长的视频 838 帧 → 28 段,**单任务显存峰值可达 31GB**,远高于用前几十条视频测出的 5.6GB。48GB 的卡上每卡只能放 1 个任务(实测两个并置必 OOM)。
 
 GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 11.8),所以加 worker 或每卡多塞任务都不会提升总吞吐。要提速只能靠 `train.precision=bf16-mixed`,跑全部 10 折时值得开。
+
+## 实验统一设定
+
+**5 折、100 epochs、无 early stopping**(`train.fold: 5`、`train.max_epochs: 100`)。
+矩阵见 `docs/experiment_matrix.md`,执行用 `pegasus/run_matrix.sh`(双卡作业队列)。
+单次实测:视频类 8.3 小时(fp32)/ 5.3 小时(bf16-mixed),姿态类约 0.7 小时。
+
+⚠ `magic_move` 造成患者级泄漏:5/5 折、46.8% 的验证样本来自训练见过的患者,
+且只发生在 DHS 与 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称抬高。
+未修复,论文用数前必须处理。
 
 ## 已知坑与过时文档
 

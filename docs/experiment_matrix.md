@@ -2,17 +2,32 @@
 
 配置在 `pegasus/matrix.tsv`,执行用 `pegasus/run_matrix.sh`(双卡作业队列,某张卡空出来就取下一个任务)。
 
-## 单次耗时
+## 统一设定
 
-fold0 训练集 1711 条视频,30 epochs:
+**5 折交叉验证、每个实验 100 epochs、不使用 early stopping。** 配置里 `train.fold: 5`、
+`train.max_epochs: 100`,`run_matrix.sh` 的默认值同步为 `FOLDS=0-4 EPOCHS=100`。
 
-| 类型 | 单次耗时 | 说明 |
+5 折划分(按患者分组,`index_mapping/3/index.json`):
+
+| fold | train | val |
 |---|---|---|
-| 视频类(concept / clip / 3dcnn / 2dcnn / cnn_lstm) | **约 2.5 小时** | 5 分钟/epoch,受视频解码 + GPU 双重限制 |
-| 姿态类(pose) | **约 0.2 小时** | 不解码视频,数据加载快 12.6 倍(364 vs 29 段/秒) |
+| 0 | 1480 | 410 |
+| 1 | 1510 | 380 |
+| 2 | 1479 | 411 |
+| 3 | 1506 | 384 |
+| 4 | 1510 | 380 |
+
+## 单次耗时(实测)
+
+| 类型 | fp32 | bf16-mixed |
+|---|---|---|
+| 视频类(concept / clip / 3dcnn / 2dcnn / cnn_lstm) | **8.3 小时** | **5.3 小时** |
+| 姿态类(pose) | 约 0.7 小时 | —— |
+
+bf16 实测 GPU 计算快 **1.56 倍**、显存 7.6→4.9 GB。由于 GPU 利用率本就 86–94%
+(算力受限),端到端加速大体能兑现。
 
 两张 A6000 各跑 1 个任务(每卡只能放 1 个:最长视频 838 帧 → 28 段,显存峰值可达 31GB)。
-`train.precision=bf16-mixed` 可再省约 1/3,建议全量阶段开启。
 
 ## 矩阵内容
 
@@ -53,14 +68,20 @@ fold0 训练集 1711 条视频,30 epochs:
 
 ## 建议的执行阶段
 
-| 阶段 | 命令 | 任务数 | 双卡耗时 |
+| 阶段 | 命令 | 任务数 | 双卡耗时 (fp32 / bf16) |
 |---|---|---|---|
-| ① 单折筛选 | `GROUP=all FOLDS=0 bash pegasus/run_matrix.sh` | 14 | 约 17 小时 |
-| ② 十折主表 | `GROUP=baseline,main FOLDS=0-9 PRECISION=bf16-mixed ...` | 70 | 约 2 天 |
-| ③ 五折消融 | `GROUP=ablation,annotator FOLDS=0-4 PRECISION=bf16-mixed ...` | 35 | 约 1 天 |
-| ④ 三种子方差 | `GROUP=main FOLDS=0-9 SEEDS=42,1337,2024 ...` | 60 | 约 1.7 天 |
+| ① 单折筛选 | `GROUP=all FOLDS=0 bash pegasus/run_matrix.sh` | 14 | 2.4 天 / 1.5 天 |
+| ② 五折主表 | `GROUP=baseline,main bash pegasus/run_matrix.sh` | 35 | 5.2 天 / 3.3 天 |
+| ③ 五折消融 | `GROUP=ablation,annotator bash pegasus/run_matrix.sh` | 35 | 6.1 天 / 3.9 天 |
+| **全矩阵** | `GROUP=all bash pegasus/run_matrix.sh` | **70** | **11.3 天 / 7.2 天** |
+| ④ 三种子方差(可选) | `GROUP=main SEEDS=42,1337,2024 ...` | 30 | 5.2 天 / 3.3 天 |
 
-阶段 ① 的作用是筛选:确认每个配置都能跑通、30 epochs 是否收敛、哪些配置值得进全量。**先跑完 ① 再决定后面怎么排**,不要直接上全量。
+100 epochs 让单次从 2.5 小时涨到 8.3 小时,全矩阵是 **11.3 天**(fp32)或 **7.2 天**(bf16)。
+两点建议:
+
+1. **先跑阶段 ①**(单折,全部 14 个配置)。它的作用不是出结论,而是确认每个配置都能跑通、
+   100 epochs 是否过拟合、哪些配置值得进全量。直接上全矩阵的风险是某个配置有问题、一周算力白费。
+2. **全矩阵建议开 `PRECISION=bf16-mixed`**,省 4 天。但整个矩阵必须用同一精度,不能混。
 
 ## 读结果时必须注意
 
@@ -73,5 +94,5 @@ fold0 训练集 1711 条视频,30 epochs:
 
 这两个不解决,上面所有数字都不能写进论文:
 
-1. **患者级数据泄漏**:`cross_validation.magic_move` 给每个非 ASD 患者挑一个片段跨 train/val 搬运,导致 **10/10 折、50% 的验证样本来自训练见过的患者**,且泄漏只发生在 DHS 和 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称地抬高。
+1. **患者级数据泄漏**:`cross_validation.magic_move` 给每个非 ASD 患者挑一个片段跨 train/val 搬运,在当前 5 折划分下导致 **5/5 折、46.8% 的验证样本来自训练见过的患者**(逐折 44.7%–49.1%),且泄漏只发生在 DHS 和 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称地抬高。
 2. **val 与 test 是同一批数据**:`cross_validation` 只产出 train/val 两个键,checkpoint 按 `val/video_acc` 选、再在同一批数据上测,所有 `test/*` 都是模型选择后的有偏估计。

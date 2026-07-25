@@ -5,11 +5,14 @@
 # 单任务显存峰值可达 31GB,两个任务挤一张 48GB 卡必 OOM。
 #
 # 用法:
-#   GROUP=baseline FOLDS=0 bash pegasus/run_matrix.sh          # 单折筛选
-#   GROUP=baseline,main FOLDS=0-9 EPOCHS=30 bash ...           # 十折主表
-#   GROUP=ablation FOLDS=0-4 SEEDS=42 bash ...                 # 五折消融
-#   SEEDS=42,1337,2024 ...                                     # 多种子报方差
-#   DRYRUN=1 ...                                               # 只打印不执行
+#   GROUP=all FOLDS=0 bash pegasus/run_matrix.sh               # 单折筛选(先跑这个)
+#   GROUP=baseline,main bash pegasus/run_matrix.sh              # 五折主表
+#   GROUP=ablation,annotator bash pegasus/run_matrix.sh         # 五折消融
+#   PRECISION=bf16-mixed ...                                    # 实测快 1.56x, 省 35% 时间
+#   SEEDS=42,1337,2024 ...                                      # 多种子报方差
+#   DRYRUN=1 ...                                                # 只打印不执行
+#
+# 全库统一:5 折、100 epochs、不使用 early stopping。
 set -u
 
 REPO=/home/kaixu_chen/asd/ClinicalCLIP_ASD_PyTorch
@@ -18,9 +21,9 @@ ROOT=${ROOT:-/mnt/data/xchen/asd_data}
 EMB=${EMB:-$ROOT/concepts/clip_vit_b32.pt}
 
 GROUP=${GROUP:-all}          # 逗号分隔;all 表示全部
-FOLDS=${FOLDS:-0}            # "0" 或 "0-9" 或 "0,3,7"
+FOLDS=${FOLDS:-0-4}          # 全库统一 5 折;也可写 "0" 或 "0,3"
 SEEDS=${SEEDS:-42}
-EPOCHS=${EPOCHS:-30}
+EPOCHS=${EPOCHS:-100}   # 统一 100 epochs, 不用 early stopping
 WORKERS=${WORKERS:-10}
 PRECISION=${PRECISION:-32-true}
 GPUS=${GPUS:-0 1}

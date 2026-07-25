@@ -93,7 +93,7 @@ train:
 
   gpu_num: 0 # GPU device number
 
-  fold: 10 # the fold number of the cross validation
+  fold: 5 # the fold number of the cross validation
 
   # 只训练指定折(如 [0]),留空跑全部。注意 index_mapping 缓存一旦存在,
   # fold 数就以缓存为准,改这里不会重新划分
