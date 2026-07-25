@@ -1,0 +1,100 @@
+#!/bin/bash
+# 按 pegasus/matrix.tsv 执行实验矩阵,双卡各跑一个任务的作业队列。
+#
+# 每卡只放 1 个任务:batch 是"一条视频的全部 gait 段",最长视频 838 帧 → 28 段,
+# 单任务显存峰值可达 31GB,两个任务挤一张 48GB 卡必 OOM。
+#
+# 用法:
+#   GROUP=baseline FOLDS=0 bash pegasus/run_matrix.sh          # 单折筛选
+#   GROUP=baseline,main FOLDS=0-9 EPOCHS=30 bash ...           # 十折主表
+#   GROUP=ablation FOLDS=0-4 SEEDS=42 bash ...                 # 五折消融
+#   SEEDS=42,1337,2024 ...                                     # 多种子报方差
+#   DRYRUN=1 ...                                               # 只打印不执行
+set -u
+
+REPO=/home/kaixu_chen/asd/ClinicalCLIP_ASD_PyTorch
+PY=/home/kaixu_chen/miniforge3/envs/asd/bin/python
+ROOT=${ROOT:-/mnt/data/xchen/asd_data}
+EMB=${EMB:-$ROOT/concepts/clip_vit_b32.pt}
+
+GROUP=${GROUP:-all}          # 逗号分隔;all 表示全部
+FOLDS=${FOLDS:-0}            # "0" 或 "0-9" 或 "0,3,7"
+SEEDS=${SEEDS:-42}
+EPOCHS=${EPOCHS:-30}
+WORKERS=${WORKERS:-10}
+PRECISION=${PRECISION:-32-true}
+GPUS=${GPUS:-0 1}
+OUT=${OUT:-$REPO/logs/matrix}
+DRYRUN=${DRYRUN:-0}
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p "$OUT"
+cd "$REPO"
+
+expand_folds() {   # 支持 0-9 展开
+  local spec=$1 out=""
+  for part in ${spec//,/ }; do
+    if [[ "$part" == *-* ]]; then
+      out+=" $(seq "${part%-*}" "${part#*-}")"
+    else
+      out+=" $part"
+    fi
+  done
+  echo "$out"
+}
+
+want_group() {
+  [[ "$GROUP" == "all" ]] && return 0
+  [[ ",$GROUP," == *",$1,"* ]]
+}
+
+# ---- 构建作业队列 ----
+declare -a JOBS=()
+while IFS=$'\t' read -r grp name args; do
+  [[ -z "${grp:-}" || "$grp" == \#* ]] && continue
+  want_group "$grp" || continue
+  args=${args//EMB/$EMB}
+  for fold in $(expand_folds "$FOLDS"); do
+    for seed in ${SEEDS//,/ }; do
+      JOBS+=("${name}__f${fold}_s${seed}|$args|$fold|$seed")
+    done
+  done
+done < pegasus/matrix.tsv
+
+echo "队列共 ${#JOBS[@]} 个任务 (GROUP=$GROUP FOLDS=$FOLDS SEEDS=$SEEDS EPOCHS=$EPOCHS)"
+if [[ "$DRYRUN" == "1" ]]; then
+  for j in "${JOBS[@]}"; do echo "  ${j%%|*}"; done
+  exit 0
+fi
+
+# ---- 双卡作业队列:某张卡空出来就取下一个任务 ----
+declare -A GPU_PID=()
+idx=0
+while (( idx < ${#JOBS[@]} )) || (( ${#GPU_PID[@]} > 0 )); do
+  for gpu in $GPUS; do
+    pid=${GPU_PID[$gpu]:-}
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      unset "GPU_PID[$gpu]"; pid=""
+    fi
+    if [[ -z "$pid" ]] && (( idx < ${#JOBS[@]} )); then
+      IFS='|' read -r tag args fold seed <<< "${JOBS[$idx]}"
+      echo "[$(date +%H:%M:%S)] GPU$gpu ← $tag  ($((idx+1))/${#JOBS[@]})"
+      $PY project/main.py $args \
+        paths.root_path="$ROOT" \
+        train.experiment="$tag" \
+        train.folds="[$fold]" \
+        train.seed="$seed" \
+        train.max_epochs="$EPOCHS" \
+        train.precision="$PRECISION" \
+        train.gpu_num="$gpu" \
+        data.num_workers="$WORKERS" \
+        > "$OUT/$tag.log" 2>&1 &
+      GPU_PID[$gpu]=$!
+      idx=$((idx+1))
+      sleep 5
+    fi
+  done
+  sleep 15
+done
+
+echo "[$(date +%H:%M:%S)] 矩阵全部完成,共 ${#JOBS[@]} 个任务"

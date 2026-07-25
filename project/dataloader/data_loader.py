@@ -51,8 +51,9 @@ class WalkDataModule(LightningDataModule):
         # concept 架构需要按区域拆开的 grounding 目标
         self._region_supervision = opt.model.backbone == "concept"
         self._region_map_size = getattr(opt.model, "region_map_size", 28)
-        # 纯姿态基线只吃关键点
+        # 纯姿态基线只吃关键点,跳过视频解码(否则 90% 时间浪费在没用的像素上)
         self._return_pose = opt.model.backbone == "pose"
+        self._return_video = opt.model.backbone != "pose"
         self._doctor_source = getattr(opt.model, "doctor_source", "both")
 
         self.train_video_transform = Compose(
@@ -110,6 +111,7 @@ class WalkDataModule(LightningDataModule):
                 region_supervision=self._region_supervision,
                 region_map_size=self._region_map_size,
                 return_pose=self._return_pose,
+                return_video=self._return_video,
                 clip_duration=self._clip_duration,
             )
 
@@ -153,11 +155,13 @@ class WalkDataModule(LightningDataModule):
         batch_pose = []
 
         for i in batch:
-            gait_num, *_ = i["video"].shape
+            # 姿态基线不解码视频,段数从 dataset 直接带过来
+            gait_num = i["num_chunks"]
             disease = i["disease"]
 
-            batch_video.append(i["video"])
-            batch_attn_map.append(i["attn_map"])
+            if "video" in i:
+                batch_video.append(i["video"])
+                batch_attn_map.append(i["attn_map"])
 
             if "pose" in i:
                 batch_pose.append(i["pose"])
@@ -185,9 +189,7 @@ class WalkDataModule(LightningDataModule):
                     )
 
         out = {
-            "video": torch.cat(batch_video, dim=0),
             "label": torch.tensor(batch_label),
-            "attn_map": torch.cat(batch_attn_map, dim=0),
             # 只带元信息:原先整个 batch 连 video/attn 张量一起放进来,等于让同样
             # 的数据再穿一次 worker→主进程的 IPC
             "info": [
@@ -199,6 +201,10 @@ class WalkDataModule(LightningDataModule):
                 for i in batch
             ],
         }
+
+        if batch_video:
+            out["video"] = torch.cat(batch_video, dim=0)
+            out["attn_map"] = torch.cat(batch_attn_map, dim=0)
 
         if batch_region_map:
             out["region_map"] = torch.cat(batch_region_map, dim=0)

@@ -140,6 +140,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         region_supervision: bool = False,
         region_map_size: int = 28,
         return_pose: bool = False,
+        return_video: bool = True,
     ) -> None:
         super().__init__()
 
@@ -152,6 +153,8 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         self._region_map_size = region_map_size
         # 纯姿态基线用,与视频共用同一批帧下标
         self._return_pose = return_pose
+        # 纯姿态基线不需要像素,跳过解码与缩放能省掉绝大部分数据加载开销
+        self._return_video = return_video
 
         # 优先复用外部传入的实例:骨架 pkl 有 97MB,train/val/test 各建一份纯属浪费
         if attn_map is not None:
@@ -178,6 +181,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         video_path = self._resolve_video_path(json_path, file_info_dict["video_path"])
 
         total, fps = _probe(video_path)
+        frames = None
         if total <= 0 or fps <= 0:
             # 容器没写帧数时退回全解码
             vframes, _, info = read_video(video_path, output_format="TCHW")
@@ -188,48 +192,55 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         else:
             plan = _plan_frame_index(total, max(int(fps), 1), self._num_samples)
             wanted, inverse = torch.unique(plan.flatten(), return_inverse=True)
-            frames = _decode_selected(video_path, wanted)
+            if self._return_video:
+                frames = _decode_selected(video_path, wanted)
 
         n_chunks = plan.shape[0]
 
-        # 先 /255 再 resize,与旧的 Div255 → Resize 顺序一致(uint8 上插值会有量化损失)
-        video = F.interpolate(
-            frames.float().div_(255.0),
-            size=(self._img_size, self._img_size),
-            mode="bilinear",
-            align_corners=False,
-            antialias=True,
-        )
-        video = video.index_select(0, inverse).view(
-            n_chunks, self._num_samples, *video.shape[1:]
-        )
-        video = video.permute(0, 2, 1, 3, 4).contiguous()  # (n_chunks, C, T, H, W)
-
-        if self.attn_map is not None:
-            attn = self.attn_map.build(
-                video_name=video_name,
-                frame_idx=wanted,
-                out_size=(self._img_size, self._img_size),
+        if frames is not None:
+            # 先 /255 再 resize,与旧的 Div255 → Resize 顺序一致(uint8 上插值会有量化损失)
+            video = F.interpolate(
+                frames.float().div_(255.0),
+                size=(self._img_size, self._img_size),
+                mode="bilinear",
+                align_corners=False,
+                antialias=True,
             )
+            video = video.index_select(0, inverse).view(
+                n_chunks, self._num_samples, *video.shape[1:]
+            )
+            video = video.permute(0, 2, 1, 3, 4).contiguous()  # (n_chunks, C, T, H, W)
         else:
-            attn = torch.zeros((wanted.numel(), 1, self._img_size, self._img_size))
-
-        if LEGACY_ATTN_DIV255:
-            attn = attn / 255.0
-
-        attn = attn.index_select(0, inverse).view(
-            n_chunks, self._num_samples, *attn.shape[1:]
-        )
-        attn = attn.permute(0, 2, 1, 3, 4).contiguous()
+            video = None
 
         sample = {
-            "video": video,
             "label": file_info_dict["label"],
-            "attn_map": attn,
             "disease": file_info_dict["disease"],
             "video_name": video_name,
             "video_index": index,
+            # 段数,供 collate 在没有 video 时也能展开视频级标签
+            "num_chunks": n_chunks,
         }
+
+        if video is not None:
+            sample["video"] = video
+
+            if self.attn_map is not None:
+                attn = self.attn_map.build(
+                    video_name=video_name,
+                    frame_idx=wanted,
+                    out_size=(self._img_size, self._img_size),
+                )
+            else:
+                attn = torch.zeros((wanted.numel(), 1, self._img_size, self._img_size))
+
+            if LEGACY_ATTN_DIV255:
+                attn = attn / 255.0
+
+            attn = attn.index_select(0, inverse).view(
+                n_chunks, self._num_samples, *attn.shape[1:]
+            )
+            sample["attn_map"] = attn.permute(0, 2, 1, 3, 4).contiguous()
 
         if self._region_supervision and self.attn_map is not None:
             size = (self._region_map_size, self._region_map_size)
@@ -266,6 +277,7 @@ def whole_video_dataset(
     region_supervision: bool = False,
     region_map_size: int = 28,
     return_pose: bool = False,
+    return_video: bool = True,
     clip_duration: int = 1,
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
@@ -279,4 +291,5 @@ def whole_video_dataset(
         region_supervision=region_supervision,
         region_map_size=region_map_size,
         return_pose=return_pose,
+        return_video=return_video,
     )

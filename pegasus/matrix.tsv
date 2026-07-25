@@ -1,0 +1,36 @@
+# ClinicalCLIP 实验矩阵
+# 列: 分组 <TAB> 实验名 <TAB> Hydra 覆盖参数(空格分隔)
+# 分组用于 run_matrix.sh 的 GROUP 过滤;以 # 开头的行会被忽略。
+#
+# 说明:
+# - EMB 会被脚本替换成 CLIP 文本概念向量的路径
+# - 所有实验共用 loss.lr=1e-4(config 默认),避免对比被不同学习率混淆
+# - pose 基线不解码视频,数据加载快约 12 倍
+
+# ============ 基线:确定下界,回答"新架构值不值" ============
+baseline	B0_3dcnn	model.backbone=3dcnn
+baseline	B1_2dcnn	model.backbone=2dcnn
+baseline	B2_cnn_lstm	model.backbone=cnn_lstm
+baseline	B3_pose	model.backbone=pose
+baseline	B4_clip_old	model.backbone=clip
+
+# ============ 主方法 ============
+main	M0_concept_learned	model.backbone=concept
+main	M1_concept_cliptext	model.backbone=concept model.concept_text_embedding=EMB
+
+# ============ 消融:哪个部件在起作用 ============
+# 核心消融:打乱区域 = 同一副骨架换个区域。不掉说明增益来自姿态而非临床知识
+ablation	A0_shuffle_region	model.backbone=concept model.shuffle_region=true
+# 去掉空间 grounding
+ablation	A1_no_grounding	model.backbone=concept loss.grounding_weight=0
+# 去掉区域存在性预测
+ablation	A2_no_presence	model.backbone=concept loss.presence_weight=0
+# 去掉概念对比(审阅确认它对编码器影响很小,此项用于证实)
+ablation	A3_no_concept_loss	model.backbone=concept loss.concept_weight=0
+# 全部临床先验损失置零 —— 隔离"架构改进"与"临床先验"各自的贡献。
+# 若此项与 M0 差不多,卖点就不是先验而是架构,论文故事要改
+ablation	A4_no_prior	model.backbone=concept loss.grounding_weight=0 loss.presence_weight=0
+
+# ============ 标注者分歧:软标签设计是否真的更好 ============
+annotator	D1_doctor1_only	model.backbone=concept model.doctor_source=doctor1
+annotator	D2_doctor2_only	model.backbone=concept model.doctor_source=doctor2
