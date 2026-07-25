@@ -210,6 +210,11 @@ class ClinicalConceptModule(LightningModule):
             if iou is not None:
                 self.test_attn_iou.append(iou.detach().cpu())
 
+    def _fold_name(self) -> str:
+        """从 logger 的 root_dir 取折号;fast_dev_run 下 logger 被禁用,root_dir 为 None。"""
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
+
     def on_test_epoch_end(self) -> None:
         if self.test_region_pred:
             pred = torch.cat(self.test_region_pred) > 0.5
@@ -226,7 +231,7 @@ class ClinicalConceptModule(LightningModule):
         if self.test_attn_iou:
             self.log("test/attn_iou", torch.stack(self.test_attn_iou).mean(), on_epoch=True)
 
-        fold_name = self.logger.root_dir.split("/")[-1] if self.logger else "fold"
+        fold_name = self._fold_name()
         save_helper(
             all_pred=self.test_pred_list,
             all_label=self.test_label_list,
@@ -235,7 +240,7 @@ class ClinicalConceptModule(LightningModule):
             num_class=self.num_classes,
         )
 
-        if self.test_region_pred:
+        if self.test_region_pred and self.save_root:
             out_path = Path(self.save_root) / "region"
             out_path.mkdir(parents=True, exist_ok=True)
             torch.save(

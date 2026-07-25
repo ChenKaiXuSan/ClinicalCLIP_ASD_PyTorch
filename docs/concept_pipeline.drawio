@@ -1,0 +1,148 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="concept-pipeline" name="Concept 训练流程">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="bg1" value="① 配置与入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="30" width="1430" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="bg2" value="② 交叉验证划分(按患者分组,防泄漏)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="260" width="1430" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="bg3" value="③ 每折:数据管线" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="480" width="1430" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="bg4" value="④ 每折:模型与损失(ClinicalConceptNet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1070" width="1430" height="470" as="geometry" />
+        </mxCell>
+        <mxCell id="bg5" value="⑤ 测试与产出" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1570" width="1430" height="290" as="geometry" />
+        </mxCell>
+
+        <!-- ① -->
+        <mxCell id="nCfg" value="configs/config.yaml (Hydra)&#10;model.backbone=concept&#10;loss.presence/grounding/concept_weight" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="330" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nCli" value="CLI 覆盖&#10;paths.root_path=/mnt/data/xchen/asd_data&#10;train.folds=[0]  train.gpu_num=0|1&#10;model.shuffle_region=true (消融)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="440" y="85" width="380" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="nMain" value="project/main.py&#10;init_params()&#10;seed_everything(42)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="90" width="220" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nConcept" value="概念库来源&#10;可学习 或 冻结文本向量&#10;model.concept_text_embedding=*.pt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="90" width="300" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ② -->
+        <mxCell id="nJson" value="json_mix/&lt;疾病&gt;/*.json&#10;1953 条视频" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="70" y="320" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="nCV" value="StratifiedGroupKFold(K=10)&#10;按患者名分组,过滤 HipOA&#10;magic_move 交换非 ASD 患者" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="350" y="310" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nIdx" value="index_mapping/3/index.json 缓存&#10;⚠ 存的是绝对路径,换机器必须重建或改前缀&#10;⚠ 缓存存在就直接加载,config 的 fold 数不生效" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="740" y="310" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nFold" value="{fold: {train:[...], val:[...]}}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="325" width="230" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ③ -->
+        <mxCell id="nPlan" value="采样计划先行 _plan_frame_index&#10;按秒切段 → 每段 round(linspace(0,L-1,8))&#10;先算出最终保留的全局帧下标" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="540" width="380" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nDecode" value="_decode_selected&#10;只对需要的帧做 rgb24 转换&#10;(旧实现全帧解码,约 73% 被丢弃)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="70" y="680" width="380" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nVid" value="video (n段, 3, 8, 224, 224)&#10;div255 → resize(224, antialias)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b9e0a5;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="820" width="380" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="nDoc" value="doctor1.csv / doctor2.csv&#10;每位医生各自的关注区域(不取并集)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="530" y="540" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="nSoft" value="presence_for → 软标签 q (5,)&#10;两人一致=1.0  仅一人=0.5  未提=0&#10;(两医生仅 45.7% 一致)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="660" width="380" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="nSkel" value="whole_annotations.pkl 骨架关键点&#10;区域 → COCO 关键点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="980" y="540" width="400" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="nRegion" value="build_regions → M (n段, 5, 8, 28, 28)&#10;可分离高斯做批量矩阵乘,只渲染被提到的区域" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="660" width="440" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="nCollate" value="collate_fn:把一条视频的所有 gait 段沿 batch 维拼接;区域软标签展开到每段&#10;batch = {video, region_map, region_target, label}   (batch_size=1 ⇒ 实际 batch 是段数)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="930" width="1080" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ④ -->
+        <mxCell id="mBack" value="slow_r50 → tokens Z (B, 256, 8, 7, 7)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1130" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mBank" value="概念库 P (5, 256)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="470" y="1130" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mCross" value="概念条件交叉注意力  Q=P, K/V=Z&#10;A (B,5,8,7,7) 时空分布   F (B,5,256) 区域特征" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1230" width="520" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mPres" value="presence head → π (B,5)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1350" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mCls" value="σ(π) 加权聚合 ⊕ mean(Z)&#10;→ classifier → logits (B,3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1435" width="330" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mLoss" value="L = L_cls  +  1.0·L_presence  +  1.0·L_grounding  +  0.1·L_concept&#10;&#10;L_presence   : BCE(π, q)             软目标,把标注分歧建模进来&#10;L_grounding  : Σ_r q_r·KL(A_r ‖ M_r)  q_r=0 的区域不施加空间约束&#10;L_concept    : F_r 对比概念库          负例是另外 4 个概念,不是批内样本" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacing=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="730" y="1230" width="680" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="mAbl" value="消融 model.shuffle_region=true&#10;沿区域维度逐样本置换 = 同一副骨架、换一个区域&#10;若指标不掉 ⇒ 增益来自姿态而非临床知识" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="730" y="1430" width="680" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- ⑤ -->
+        <mxCell id="tTest" value="trainer.test(ckpt=best)&#10;推理只输入视频,医生标注不参与" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#66bb6a;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1640" width="360" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="tMetric" value="分类: video_acc / video_f1&#10;可解释性: region_f1 (预测区域 vs 医生标注)&#10;              attn_iou  (注意力 vs 医生区域图)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="510" y="1630" width="430" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="tOut" value="logs/train/&lt;exp&gt;/&lt;日期&gt;/&lt;时刻&gt;/&#10;tensorboard/ csv/ checkpoint/&lt;fold&gt;/&#10;region/&lt;fold&gt;_region.pt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="1630" width="410" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- 连线 -->
+        <mxCell id="c1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nCfg" target="nMain"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nCli" target="nMain"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nMain" target="nConcept"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nJson" target="nCV"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nCV" target="nIdx"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nIdx" target="nFold"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c7" value="每折" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nFold" target="nPlan"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nPlan" target="nDecode"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nDecode" target="nVid"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c10" value="同一批帧下标" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nPlan" target="nRegion"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nDoc" target="nSoft"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nSkel" target="nRegion"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c13" value="只渲染 q&gt;0 的区域" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nSoft" target="nRegion"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nVid" target="nCollate"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nSoft" target="nCollate"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nRegion" target="nCollate"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c17" value="video" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nCollate" target="mBack"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="nConcept" target="mBank"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c19" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mBack" target="mCross"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c20" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mBank" target="mCross"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c21" value="F" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mCross" target="mPres"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c22" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mPres" target="mCls"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c23" value="A / F / π" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mCross" target="mLoss"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c24" value="region_map / region_target" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="nCollate" target="mLoss"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c25" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mCls" target="mLoss"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c26" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="mCls" target="tTest"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c27" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="tTest" target="tMetric"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c28" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="tMetric" target="tOut"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

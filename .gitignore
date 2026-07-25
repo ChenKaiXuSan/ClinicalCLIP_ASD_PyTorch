@@ -129,3 +129,5 @@ MNIST
 .DS_Store
 
 logs/
+# 本机实验日志
+logs/

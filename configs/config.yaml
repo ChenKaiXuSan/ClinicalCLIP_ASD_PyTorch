@@ -83,4 +83,10 @@ train:
 
   fold: 10 # the fold number of the cross validation
 
+  # 只训练指定折(如 [0]),留空跑全部。注意 index_mapping 缓存一旦存在,
+  # fold 数就以缓存为准,改这里不会重新划分
+  folds: null
+
+  fast_dev_run: false # 只跑一个 batch,验证整条链路
+
 log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}

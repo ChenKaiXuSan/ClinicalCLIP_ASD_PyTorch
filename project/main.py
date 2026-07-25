@@ -131,23 +131,24 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
             model_check_point,
             lr_monitor,
         ],
-        # limit_train_batches=2,
-        # limit_val_batches=2,
-        # limit_test_batches=2,
+        # train.fast_dev_run=true 时只跑一个 batch,用于验证整条链路
+        fast_dev_run=hparams.train.get("fast_dev_run", False),
     )
 
     trainer.fit(classification_module, data_module)
 
     # the validate method will wirte in the same log twice, so use the test method.
+    # fast_dev_run 下不写 checkpoint,只能用当前权重
     test_metrics = trainer.test(
         classification_module,
         data_module,
-        ckpt_path="best",
+        ckpt_path=None if trainer.fast_dev_run else "best",
         weights_only=False,
     )
 
-    with open(os.path.join(tb_logger.log_dir, "test_metrics.txt"), "w") as f:
-        f.write(str(test_metrics))
+    if not trainer.fast_dev_run:
+        with open(os.path.join(tb_logger.log_dir, "test_metrics.txt"), "w") as f:
+            f.write(str(test_metrics))
 
 
 @hydra.main(
@@ -158,6 +159,18 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
 def init_params(config):
 
     fold_dataset_idx = DefineCrossValidation(config)()
+
+    # train.folds 可指定只跑部分折,便于快速对照实验;留空则跑全部
+    selected = config.train.get("folds", None)
+    if selected:
+        wanted = {str(f) for f in selected}
+        fold_dataset_idx = {
+            k: v for k, v in fold_dataset_idx.items() if str(k) in wanted
+        }
+        if not fold_dataset_idx:
+            raise ValueError(f"train.folds={selected} 没有匹配到任何折")
+
+    logging.info("将要训练的折: %s", sorted(fold_dataset_idx.keys()))
 
     for fold, dataset_value in fold_dataset_idx.items():
         train(config, dataset_value, fold)
