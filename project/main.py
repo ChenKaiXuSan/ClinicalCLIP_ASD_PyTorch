@@ -133,6 +133,8 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         ],
         # train.fast_dev_run=true 时只跑一个 batch,用于验证整条链路
         fast_dev_run=hparams.train.get("fast_dev_run", False),
+        # 默认 32-true 保持既有数值行为;显存吃紧或跑全部 10 折时可换 bf16-mixed
+        precision=hparams.train.get("precision", "32-true"),
     )
 
     trainer.fit(classification_module, data_module)

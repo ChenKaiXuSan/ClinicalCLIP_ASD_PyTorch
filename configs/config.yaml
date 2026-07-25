@@ -89,4 +89,8 @@ train:
 
   fast_dev_run: false # 只跑一个 batch,验证整条链路
 
+  # 32-true | bf16-mixed。显存峰值随视频最长段数变化(838 帧的视频约 31GB),
+  # 跑全部 10 折时用 bf16-mixed 可显著降低显存与耗时
+  precision: "32-true"
+
 log_path: logs/train/${train.experiment}/${now:%Y-%m-%d}/${now:%H-%M-%S}
