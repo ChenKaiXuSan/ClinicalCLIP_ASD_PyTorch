@@ -1,0 +1,206 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="clinicalclip-pipeline" name="ClinicalCLIP Pipeline">
+    <mxGraphModel dx="1500" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ======== 背景分区 ======== -->
+        <mxCell id="bg1" value="① 配置与入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1330" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="bg2" value="② 交叉验证划分 — project/cross_validation.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="230" width="1330" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="bg3" value="③ K 折循环 — main.py: for fold in 0..9 → train(config, dataset_idx, fold)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="1330" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="bg3a" value="数据加载 — WalkDataModule (attn_map=True)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;dashed=1;verticalAlign=top;align=left;fontSize=12;fontStyle=1;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="70" y="640" width="650" height="530" as="geometry" />
+        </mxCell>
+        <mxCell id="bg3b" value="模型 — VideoAttentionCLIP (models/clip_align.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;dashed=1;verticalAlign=top;align=left;fontSize=12;fontStyle=1;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="740" y="640" width="600" height="530" as="geometry" />
+        </mxCell>
+        <mxCell id="bg4" value="④ 输出与分析" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1470" width="1330" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- ======== ① 配置与入口 ======== -->
+        <mxCell id="n_cfg" value="configs/config.yaml&#10;Hydra 配置&#10;(loss / paths / model / train)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_peg" value="pegasus/run_*.sh (PBS 超算脚本)&#10;CLI 覆盖 paths.* 与实验参数&#10;(ablation / compare / map_guided / semantics)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="340" y="90" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_main" value="project/main.py&#10;init_params()&#10;seed_everything(42)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="90" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_path" value="⚠ 路径注意&#10;默认 root_path=/workspace/data (Docker 容器路径)&#10;本机实际: /mnt/data/xchen/asd_data&#10;index.json 缓存内仍是 /workspace 前缀" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="910" y="85" width="430" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ======== ② 交叉验证 ======== -->
+        <mxCell id="n_json" value="data_info: json_mix/&lt;疾病&gt;/*.json&#10;(video_name / video_path / label)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="70" y="300" width="270" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n_cv" value="DefineCrossValidation&#10;class_num=3:&#10;ASD / DHS / LCS_HipOA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="390" y="295" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_q" value="index_mapping/&lt;n&gt;&#10;缓存存在?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="660" y="285" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_kfold" value="StratifiedGroupKFold(K=10) 按患者分组&#10;过滤 HipOA 样本 + magic_move 交换非ASD患者" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="910" y="280" width="420" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n_idx" value="index.json: {fold: {train:[json路径], val:[json路径]}}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="910" y="370" width="420" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ======== ③ K 折循环 ======== -->
+        <mxCell id="n_bb" value="按 model.backbone 选择 LightningModule:&#10;clip → CLIPAlignModule | 3dcnn → SingleModule | cnn_lstm → CNNLstmModule | 2dcnn → CNNModule" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="330" y="530" width="740" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- 数据加载 -->
+        <mxCell id="n_ds" value="LabeledGaitVideoDataset&#10;(whole_video_dataset.py)&#10;读取该 fold 的 train/val json 列表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="100" y="690" width="270" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_vid" value="PyAV read_video (全帧解码)&#10;路径重映射 → &lt;info_path&gt;/video/…" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="100" y="810" width="270" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n_attn" value="MedAttnMap 医生注意力图&#10;doctor1/2.csv 关注区域 → COCO 关键点&#10;whole_annotations.pkl 骨架坐标&#10;→ 逐帧高斯热图 (T,1,H,W)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="410" y="790" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n_tr" value="move_transform 按秒切段(gait 段)&#10;UniformTemporalSubsample(8)&#10;Div255 + Resize(224)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="100" y="930" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n_col" value="collate_fn&#10;疾病 → 标签映射&#10;按 gait 段拼接 batch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="410" y="935" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_batch" value="batch: video(B,3,8,224,224)&#10;attn_map(B,1,8,224,224) + label(B)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b9e0a5;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="190" y="1070" width="400" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 模型 -->
+        <mxCell id="n_venc" value="视频编码器 ResNet3D slow_r50(预训练)&#10;map_guided 三选一:&#10;spatiotemporal: token 门控 + 注意力加权池化&#10;channel: MLP 通道门控&#10;weighted_pool: 仅注意力加权池化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="770" y="690" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n_aenc" value="注意图编码器&#10;ResNet3DEncoder&#10;(1 通道, 不预训练)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="705" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n_proj" value="ClipProjectionHead ×2&#10;→ video_embed / attn_embed (L2 归一化, 256维)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="770" y="860" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n_cls" value="classifier (Linear)&#10;source = video | attn | fusion&#10;→ logits (3 类)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="855" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_loss" value="loss = CE(logits, label)&#10;+ clip_weight × InfoNCE(video_embed, attn_embed, 可学习温度)&#10;+ λ_token × token 能量对齐损失" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="1060" width="470" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- 训练与测试 -->
+        <mxCell id="n_fit" value="Trainer.fit (单 GPU, max_epochs=100)&#10;ModelCheckpoint: val/video_acc↑ top2+last&#10;LRMonitor / Adam + CosineAnnealingLR&#10;TensorBoard + CSV logger&#10;⚠ EarlyStopping 已定义但未加入 callbacks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1270" width="400" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n_test" value="trainer.test(ckpt=best)&#10;acc / F1 + 检索 R@1 R@5 (video↔attn)&#10;对齐相似度 gap / corr&#10;save_helper: 混淆矩阵与指标" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1270" width="400" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ======== ④ 输出 ======== -->
+        <mxCell id="n_out" value="logs/train/&lt;experiment&gt;/&lt;日期&gt;/&lt;时刻&gt;/&#10;tensorboard/ csv/ checkpoint/&lt;fold&gt;/&#10;embeddings/&lt;fold&gt;_*.pt + test_metrics.txt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1530" width="440" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_ana" value="analysis/: run_tsne.sh / export_tsne.sh&#10;utils/tsne_compare.py&#10;embedding 的 t-SNE 可视化对比" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1530" width="400" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ======== 连线 ======== -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_cfg" target="n_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="CLI 覆盖" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_peg" target="n_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="DefineCrossValidation()" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_main" target="n_cv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_json" target="n_cv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_cv" target="n_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="否: 重新划分" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_q" target="n_kfold">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="保存缓存" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_kfold" target="n_idx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="是: 直接加载" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="n_q" target="n_idx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="for fold, dataset_idx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_idx" target="n_bb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="WalkDataModule(hparams, dataset_idx)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="n_bb" target="n_ds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_ds" target="n_vid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="vframes + 骨架" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_vid" target="n_attn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_vid" target="n_tr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="attn_map 同样切段" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_attn" target="n_tr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_tr" target="n_col">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_col" target="n_batch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" value="video + attn_map" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_batch" target="n_venc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="attn_map" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_batch" target="n_aenc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" value="video_feat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_venc" target="n_proj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" value="attn_feat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_aenc" target="n_proj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" value="video_feat (默认)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="n_venc" target="n_cls">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" value="InfoNCE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_proj" target="n_loss">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" value="CE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_cls" target="n_loss">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e24" value="反向传播 / 逐 batch 迭代" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_loss" target="n_fit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e25" value="classification_module" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="n_bb" target="n_fit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e26" value="best ckpt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_fit" target="n_test">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e27" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_test" target="n_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e28" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n_out" target="n_ana">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
