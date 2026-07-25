@@ -66,10 +66,23 @@ RUN_LOG="${OUT_DIR}/${TAG}.log"
     echo "===================================================================="
 } | tee "${RUN_LOG}"
 
-source pegasus/setup_env.sh 2>&1 | tee -a "${RUN_LOG}"
+# 不能写成 `source ... | tee`:管道会把 source 放进子 shell,conda 激活对主 shell
+# 无效,后面的 `python` 就成了 PATH 里的 Intel Python 3.9。它自带 mpi4py,于是
+# lightning 的 MPIEnvironment.detect() 会去 MPI_Init,在没有 OFI provider 的
+# 计算节点上直接 SIGSEGV。改成先落盘再追加到日志。
+source pegasus/setup_env.sh >> "${RUN_LOG}" 2>&1
+tail -6 "${RUN_LOG}"
+
+PYTHON="$(command -v python)"
+echo "解释器    : ${PYTHON}" | tee -a "${RUN_LOG}"
+case "${PYTHON}" in
+    *"/envs/"*) ;;
+    *) echo "ERROR: conda 环境没激活成功,解释器是 ${PYTHON};中止以免用错依赖" | tee -a "${RUN_LOG}"
+       exit 1 ;;
+esac
 
 # shellcheck disable=SC2086
-python project/main.py ${ARGS} \
+"${PYTHON}" project/main.py ${ARGS} \
     paths.root_path="${DATA_ROOT}" \
     train.experiment="${TAG}" \
     train.folds="[${FOLD}]" \

@@ -35,6 +35,7 @@ from pytorch_lightning.callbacks import (
     RichProgressBar,
 )
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
+from pytorch_lightning.plugins.environments import LightningEnvironment
   
 from cross_validation import DefineCrossValidation
 from dataloader.data_loader import WalkDataModule
@@ -130,6 +131,12 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
             int(hparams.train.gpu_num),
         ],
         accelerator="gpu",
+        # 不显式指定的话 lightning 会逐个探测集群环境,其中 MPIEnvironment.detect()
+        # 只要 import 得到 mpi4py 就会 MPI_Init。超算上一旦误用了自带 mpi4py 的
+        # Intel Python,节点又没有可用的 OFI provider,整个进程直接 SIGSEGV。
+        # 训练本来就是单卡(devices=[gpu_num])、从不 DDP,固定用 LightningEnvironment
+        # 既语义正确,也不给这条探测路径留机会。
+        plugins=[LightningEnvironment()],
         max_epochs=hparams.train.max_epochs,
         logger=[tb_logger, csv_logger],
         check_val_every_n_epoch=1,
