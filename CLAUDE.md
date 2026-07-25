@@ -11,7 +11,7 @@ ClinicalCLIP:用 CLIP 式对比学习将步态视频与医生标注注意力图�
 运行环境是 conda env `asd`(`/home/kaixu_chen/miniforge3/envs/asd`),base 环境缺 seaborn 等依赖。
 
 ```bash
-# 训练全部 10 折(必须以脚本方式运行;project 内部是平铺 import,依赖 sys.path[0]=project/,
+# 训练全部 5 折(必须以脚本方式运行;project 内部是平铺 import,依赖 sys.path[0]=project/,
 # 用 python -m project.main 会 ImportError)
 python project/main.py
 
@@ -37,7 +37,7 @@ analysis/run_tsne.sh
 
 数据根目录下 `clinical_CLIP_dataset/` 的子目录:`json_mix/<疾病>/*.json`(每段视频的元信息)、`video/`(MP4)、`doctor_result/doctor{1,2}.csv`(医生关注区域)、`seg_skeleton_pkl/whole_annotations.pkl`(骨架关键点)、`index_mapping/<class_num>/index.json`(交叉验证划分缓存)。
 
-**缓存陷阱**:`index.json` 存的是生成时环境的绝对路径。`cross_validation.py` 只要发现 `index_mapping/<class_num>/` 存在就直接加载,**`train.fold` 改了也不会重新划分**,换机器必须先 sed 替换前缀或删缓存重建。Pegasus 上用 `pegasus/prepare_index.sh` 处理(旧缓存备份到 `3.bak.<折数>fold/`,不删);它已把超算上原先的 10 折缓存换成了矩阵要求的 5 折。
+**缓存陷阱**:`index.json` 存的是生成时环境的绝对路径。`cross_validation.py` 只要发现 `index_mapping/<class_num>/` 存在就直接加载,**`train.fold` 改了也不会重新划分**,换机器必须先 sed 替换前缀或删缓存重建。用 `pegasus/prepare_index.sh` 处理(旧缓存备份到 `3.bak.<折数>fold/`,不删)。全库只保留 5 折划分,超算上原先那份 10 折缓存已删除。
 
 划分本身是确定的:同样的 `train.fold=5` 在本机和超算上重建出的每折规模完全一致(1480/410、1510/380、1479/411、1506/384、1510/380),所以跨机器的实验仍可比。
 
@@ -79,7 +79,7 @@ concept 架构的四项损失见 `models/clinical_concept.py`:分类 CE、区域
 
 batch 是"一条视频的全部 gait 段",最长的视频 838 帧 → 28 段,**单任务显存峰值可达 31GB**,远高于用前几十条视频测出的 5.6GB。48GB 的卡上每卡只能放 1 个任务(实测两个并置必 OOM)。
 
-GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 11.8),所以加 worker 或每卡多塞任务都不会提升总吞吐。要提速只能靠 `train.precision=bf16-mixed`,跑全部 10 折时值得开。
+GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 11.8),所以加 worker 或每卡多塞任务都不会提升总吞吐。要提速只能靠 `train.precision=bf16-mixed`,跑全矩阵时值得开。
 
 ## 实验统一设定
 

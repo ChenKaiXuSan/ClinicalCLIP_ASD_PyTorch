@@ -2,16 +2,16 @@
 # 在登录节点先把交叉验证划分生成好,再提交矩阵作业。两件事:
 #
 # 1. 折数对齐。cross_validation.py 只要发现 index_mapping/<class_num>/ 存在就直接加载,
-#    train.fold 改了也不会重新划分。Pegasus 上现存的缓存是 **10 折**(train 1711 / val 179),
-#    而实验矩阵统一用 **5 折**(train 1480 / val 410)。不换掉,提交上去的
-#    train.folds=[0..4] 会训在 10 折的划分上,和 docs/experiment_matrix.md 的表对不上。
+#    train.fold 改了也不会重新划分 —— 缓存是几折,训的就是几折。实验矩阵统一用
+#    **5 折**(train 1480 / val 410),折数对不上,train.folds=[0..4] 训出来的东西
+#    和 docs/experiment_matrix.md 的表就不是一回事。
 # 2. 避免竞态。70 个作业同时启动、缓存又不存在时会一起去写 index.json。
 #
 # 旧缓存不会被删除,而是移到 index_mapping/<class_num>.bak.<折数>fold/,随时可以换回来。
 #
 # 用法:
 #   bash pegasus/prepare_index.sh          # 需要时重建成 5 折
-#   FOLD=10 bash pegasus/prepare_index.sh  # 要别的折数
+#   FOLD=8 bash pegasus/prepare_index.sh   # 要别的折数
 #   DRYRUN=1 bash pegasus/prepare_index.sh # 只报告现状,不改任何东西
 
 set -euo pipefail

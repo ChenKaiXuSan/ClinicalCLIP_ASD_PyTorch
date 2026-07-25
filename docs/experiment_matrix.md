@@ -110,10 +110,9 @@ qsub  pegasus/smoke_test.sh        # 一个节点上把 14 个配置各跑一个
 ```
 
 `prepare_index.sh` 不是可选步骤。`cross_validation.py` 只要发现 `index_mapping/3/` 存在就直接加载,
-`train.fold` 改了也不会重新划分 —— Pegasus 上原先缓存的是 **10 折**(train 1711 / val 179),
-不换掉的话 `train.folds=[0..4]` 会训在 10 折的划分上,和上面的表完全对不上。
-旧缓存被移到 `index_mapping/3.bak.10fold/`,随时可以换回来。`submit_matrix.sh` 提交前会检查折数,
-对不上直接拒绝提交。
+`train.fold` 改了也不会重新划分 —— 缓存是几折,训的就是几折。Pegasus 上原先那份 10 折缓存
+(train 1711 / val 179)已经换成 5 折并删除,现在数据目录里只有 5 折这一份。
+`submit_matrix.sh` 提交前会校验折数,对不上直接拒绝提交。
 
 ### 提交
 
