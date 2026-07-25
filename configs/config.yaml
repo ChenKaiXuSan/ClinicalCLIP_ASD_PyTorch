@@ -9,7 +9,10 @@ hydra:
     chdir: false
 
 loss:
-  lr: 0.01
+  # 1e-2 会让 Adam 冲垮 Kinetics 预训练的 backbone:实测分类损失在 80 步内
+  # 从 1.20 掉到 0.02 又崩到 5.52,训练全程停在类别先验上。1e-3 仍震荡,
+  # 1e-4 单调稳定收敛。
+  lr: 0.0001
   weight_decay: 0.001
   clip_weight: 1.0
   clip_temperature: 0.07
@@ -39,7 +42,8 @@ data:
 
 model:
   backbone: "clip"
-  model: "resnet" # model architecture name
+  model: "resnet" # 仅 3dcnn/2dcnn/cnn_lstm 基线经 make_model 使用
+  model_depth: 50 # 基线 backbone 深度 (make_model 需要)
   model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
   clip_backbone_depth: 50 # ResNet depth for 3D CNN
   clip_backbone_pretrained: true
@@ -77,6 +81,8 @@ train:
 
   attn_map: True # if use the attention map
 
+  transfer_learning: true # 基线是否用 Kinetics 预训练权重 (make_model 需要)
+
   experiment: ${oc.select:hydra.runtime.choices.experiment,manual} # fallback for direct CLI overrides
 
   gpu_num: 0 # GPU device number
@@ -86,6 +92,8 @@ train:
   # 只训练指定折(如 [0]),留空跑全部。注意 index_mapping 缓存一旦存在,
   # fold 数就以缓存为准,改这里不会重新划分
   folds: null
+
+  seed: 42 # 报告方差时需要跑多个种子
 
   fast_dev_run: false # 只跑一个 batch,验证整条链路
 

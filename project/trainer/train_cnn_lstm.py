@@ -45,7 +45,8 @@ class CNNLstmModule(LightningModule):
 
         # return model type name
         self.model_type = hparams.model.model
-        self.lr = hparams.optimizer.lr
+        # 与 concept/clip 共用 loss.lr,避免对比实验被不同学习率混淆
+        self.lr = hparams.loss.lr
         self.num_classes = hparams.model.model_class_num
 
         # model define

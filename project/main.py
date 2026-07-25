@@ -66,7 +66,8 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         list: best trained model, data loader
     """
 
-    seed_everything(42, workers=True)
+    # 论文需要报告跨种子的方差,种子必须可配置
+    seed_everything(hparams.train.get("seed", 42), workers=True)
 
     # * select experiment
     if hparams.model.backbone == "3dcnn":
