@@ -28,7 +28,6 @@ import torch
 from omegaconf import DictConfig
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import (
-    EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
     RichModelSummary,
@@ -108,13 +107,6 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
         mode="max",
         save_last=True,
         save_top_k=2,
-    )
-
-    # define the early stop.
-    early_stopping = EarlyStopping(
-        monitor="val/video_acc",
-        patience=3,
-        mode="max",
     )
 
     lr_monitor = LearningRateMonitor(logging_interval="step")

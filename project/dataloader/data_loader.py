@@ -20,6 +20,7 @@ from pytorchvideo.data import make_clip_sampler
 from pytorchvideo.data.labeled_video_dataset import labeled_video_dataset
 
 from .whole_video_dataset import whole_video_dataset
+from .med_attn_map import MedAttnMap
 from .utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
 
 
@@ -46,14 +47,7 @@ class WalkDataModule(LightningDataModule):
         self._class_num = opt.model.model_class_num
         self._experiment = opt.train.experiment
         self._attn_map = opt.train.attn_map
-
-        self.mapping_transform = Compose(
-            [
-                UniformTemporalSubsample(self.uniform_temporal_subsample_num),
-                Div255(),
-                Resize(size=[self._img_size, self._img_size]),
-            ]
-        )
+        self._med_attn_map: Optional[MedAttnMap] = None
 
         self.train_video_transform = Compose(
             [
@@ -94,31 +88,30 @@ class WalkDataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self._attn_map:
-            self.train_gait_dataset = whole_video_dataset(
+            # 骨架 pkl 97MB,只建一次给三个 dataset 共用(worker fork 时也只有一份)
+            if self._med_attn_map is None:
+                self._med_attn_map = MedAttnMap(
+                    self._doctor_res_path, self._skeleton_path
+                )
+
+            common = dict(
                 experiment=self._experiment,
-                dataset_idx=self._dataset_idx['train'],
-                transform=self.mapping_transform,
-                skeleton_path=self._skeleton_path,
-                doctor_res_path=self._doctor_res_path,
+                img_size=self._img_size,
+                num_samples=self.uniform_temporal_subsample_num,
+                attn_map=self._med_attn_map,
                 clip_duration=self._clip_duration,
+            )
+
+            self.train_gait_dataset = whole_video_dataset(
+                dataset_idx=self._dataset_idx['train'], **common
             )
 
             self.val_gait_dataset = whole_video_dataset(
-                experiment=self._experiment,
-                dataset_idx=self._dataset_idx['val'],
-                transform=self.mapping_transform,
-                doctor_res_path=self._doctor_res_path,
-                skeleton_path=self._skeleton_path,
-                clip_duration=self._clip_duration,
+                dataset_idx=self._dataset_idx['val'], **common
             )
 
             self.test_gait_dataset = whole_video_dataset(
-                experiment=self._experiment,
-                dataset_idx=self._dataset_idx['val'],
-                transform=self.mapping_transform,
-                doctor_res_path=self._doctor_res_path,
-                skeleton_path=self._skeleton_path,
-                clip_duration=self._clip_duration,
+                dataset_idx=self._dataset_idx['val'], **common
             )
 
         else:
@@ -171,38 +164,34 @@ class WalkDataModule(LightningDataModule):
             "video": torch.cat(batch_video, dim=0),
             "label": torch.tensor(batch_label),
             "attn_map": torch.cat(batch_attn_map, dim=0),
-            "info": batch,
+            # 只带元信息:原先整个 batch 连 video/attn 张量一起放进来,等于让同样
+            # 的数据再穿一次 worker→主进程的 IPC
+            "info": [
+                {k: v for k, v in i.items() if k not in ("video", "attn_map")}
+                for i in batch
+            ],
         }
 
-    def train_dataloader(self) -> DataLoader:
+    def _dataloader(self, dataset, shuffle: bool, drop_last: bool) -> DataLoader:
         return DataLoader(
-            self.train_gait_dataset,
+            dataset,
             batch_size=self._batch_size,
             num_workers=self._num_workers,
-            pin_memory=False,
-            shuffle=True,
-            drop_last=True,
+            pin_memory=True,
+            shuffle=shuffle,
+            drop_last=drop_last,
             collate_fn=self.collate_fn,
+            # 每个 epoch 重建 worker 要重新 fork 一遍 97MB 的骨架数据
+            persistent_workers=self._num_workers > 0,
+            prefetch_factor=4 if self._num_workers > 0 else None,
         )
+
+    def train_dataloader(self) -> DataLoader:
+        return self._dataloader(self.train_gait_dataset, shuffle=True, drop_last=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.val_gait_dataset,
-            batch_size=self._batch_size,
-            num_workers=self._num_workers,
-            pin_memory=False,
-            shuffle=False,
-            drop_last=True,
-            collate_fn=self.collate_fn,
-        )
+        # 验证/测试不能丢样本,否则指标算在残缺集合上
+        return self._dataloader(self.val_gait_dataset, shuffle=False, drop_last=False)
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.test_gait_dataset,
-            batch_size=self._batch_size,
-            num_workers=self._num_workers,
-            pin_memory=False,
-            shuffle=False,
-            drop_last=True,
-            collate_fn=self.collate_fn,
-        )
+        return self._dataloader(self.test_gait_dataset, shuffle=False, drop_last=False)

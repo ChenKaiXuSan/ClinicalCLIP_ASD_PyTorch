@@ -4,10 +4,14 @@
 File: whole_video_dataset.py
 Project: dataloader
 Created Date: 2026-02-03
-Author: OpenAI Assistant
+Author: Kaixu Chen
 -----
 Comment:
 Load full video clips with clinician attention maps.
+
+采样计划先行:先根据视频总帧数算出最终会被保留的帧下标,再只解码、只生成
+这些帧。旧实现解码全部帧、在原始分辨率上为每一帧生成注意力图,而后续按秒
+切段 + 每段取 8 帧只保留约四分之一,且缩到 224,绝大部分计算被丢弃。
 """
 
 from __future__ import annotations
@@ -15,13 +19,23 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import av
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from .med_attn_map import MedAttnMap
+
+logger = logging.getLogger(__name__)
+
+# 旧实现对 video 和 attn_map 共用同一个 Compose,其中的 Div255 也作用在
+# 注意力图上,使高斯图从 [0,1] 变成 [0,1/255]。模型里 downsample_attn_to_tokens
+# 会做逐样本 min-max 归一化,该缩放基本被抵消;但 ChannelMapGuidedVideoEncoder
+# 直接把原始均值送进 MLP,尺度是有影响的。此处保持与既有实验一致,如需修正
+# 把此常量改为 False。
+LEGACY_ATTN_DIV255 = True
 
 
 def read_video(filename: str, output_format: str = "TCHW", pts_unit: str = "sec"):
@@ -32,6 +46,7 @@ def read_video(filename: str, output_format: str = "TCHW", pts_unit: str = "sec"
     fps = 0.0
     with av.open(filename) as container:
         stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
         fps = float(stream.average_rate or 0)
         for frame in container.decode(stream):
             frames.append(frame.to_ndarray(format="rgb24"))  # H x W x C
@@ -47,7 +62,6 @@ def read_video(filename: str, output_format: str = "TCHW", pts_unit: str = "sec"
     info = {"video_fps": fps}
     return vframes, torch.tensor([]), info
 
-logger = logging.getLogger(__name__)
 
 @dataclass
 class ClinicalAttnVideoData:
@@ -58,22 +72,83 @@ class ClinicalAttnVideoData:
     video_name: str
     video_index: int
 
+
+def _probe(video_path: str) -> Tuple[int, float]:
+    """读容器元信息拿总帧数和 fps,不解码像素。"""
+    with av.open(video_path) as container:
+        stream = container.streams.video[0]
+        return int(stream.frames or 0), float(stream.average_rate or 0)
+
+
+def _plan_frame_index(total: int, fps: int, num_samples: int) -> torch.Tensor:
+    """复刻旧的“按秒切段 + 每段均匀取 num_samples 帧”得到的全局帧下标。
+
+    Returns:
+        (n_chunks, num_samples) 的下标,段内不足时重复最近帧(同 UniformTemporalSubsample)。
+    """
+    chunks = []
+    for start in range(0, total, fps):
+        length = min(start + fps, total) - start
+        offset = torch.round(
+            torch.linspace(0, max(length - 1, 0), num_samples)
+        ).long()
+        chunks.append(offset + start)
+    return torch.stack(chunks, dim=0)
+
+
+def _decode_selected(video_path: str, wanted: torch.Tensor) -> torch.Tensor:
+    """顺序解码,只对需要的帧做 rgb24 转换。
+
+    帧间预测决定了必须逐帧走解码器,但 to_ndarray 的色彩空间转换和拷贝是大头,
+    跳过无用帧即可省下这部分。
+
+    Returns:
+        (len(wanted), 3, H, W) uint8,顺序与 wanted 一致。
+    """
+    wanted_set = {int(i) for i in wanted}
+    last = int(wanted[-1])
+    collected: dict[int, np.ndarray] = {}
+
+    with av.open(video_path) as container:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        for i, frame in enumerate(container.decode(stream)):
+            if i in wanted_set:
+                collected[i] = frame.to_ndarray(format="rgb24")
+            if i >= last:
+                break
+
+    if not collected:
+        raise RuntimeError(f"no frame decoded from {video_path}")
+
+    # 个别容器声明的帧数多于实际可解码帧,用最后一帧补齐
+    fallback = collected[max(collected)]
+    stacked = np.stack([collected.get(int(i), fallback) for i in wanted])
+    return torch.from_numpy(stacked).permute(0, 3, 1, 2).contiguous()
+
+
 class LabeledGaitVideoDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         experiment: str,
-        labeled_video_paths: list[Tuple[str, Optional[dict]]],
-        transform: Optional[Callable[[dict], Any]] = None,
+        labeled_video_paths: list,
+        img_size: int = 224,
+        num_samples: int = 8,
         doctor_res_path: str = "",
         skeleton_path: str = "",
+        attn_map: Optional[MedAttnMap] = None,
     ) -> None:
         super().__init__()
 
-        self._transform = transform
         self._labeled_videos = labeled_video_paths
         self._experiment = experiment
+        self._img_size = img_size
+        self._num_samples = num_samples
 
-        if doctor_res_path and skeleton_path:
+        # 优先复用外部传入的实例:骨架 pkl 有 97MB,train/val/test 各建一份纯属浪费
+        if attn_map is not None:
+            self.attn_map = attn_map
+        elif doctor_res_path and skeleton_path:
             self.attn_map = MedAttnMap(doctor_res_path, skeleton_path)
         else:
             self.attn_map = None
@@ -81,58 +156,69 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self._labeled_videos)
 
-    def move_transform(self, vframes: torch.Tensor, fps: int) -> torch.Tensor:
-        t, *_ = vframes.shape
-        batch_res = []
-
-        for f in range(0, t, fps):
-            one_sec_vframes = vframes[f : f + fps, :, :, :]
-
-            if self._transform is not None:
-                transformed_img = self._transform(one_sec_vframes)
-                batch_res.append(transformed_img.permute(1, 0, 2, 3))
-            else:
-                logger.warning("no transform")
-                batch_res.append(one_sec_vframes.permute(1, 0, 2, 3))
-
-        return torch.stack(batch_res, dim=0)
+    def _resolve_video_path(self, json_path, recorded_path: str) -> str:
+        # json 里写死的是生成时环境的绝对路径,只取末尾三段接到当前数据根目录下
+        prefix = str(json_path).split("json_mix/")[0]
+        return prefix + "video/" + "/".join(recorded_path.split("/")[-3:])
 
     def __getitem__(self, index) -> dict[str, Any]:
-        with open(self._labeled_videos[index]) as f:
+        json_path = self._labeled_videos[index]
+        with open(json_path) as f:
             file_info_dict = json.load(f)
 
         video_name = file_info_dict["video_name"]
-        video_path = file_info_dict["video_path"]
+        video_path = self._resolve_video_path(json_path, file_info_dict["video_path"])
 
-        # TODO: 之后修改为从video_path里面读取video path进行load
-        # * json mix里面是提前写好的，但是在超算的环境下，video path是需要改变的
-        # video_path = "/" + "/".join(self._labeled_videos[index].parts[1:4]) + "/video/" + "/".join(video_path.split("/")[-3:])
-        _pref = str(self._labeled_videos[index]).split("json_mix/")[0]
-        video_path = _pref + "video/" + "/".join(video_path.split("/")[-3:])
-        # logger.info(f"Loading video from path: {video_path}")
-        vframes, _, info = read_video(video_path, output_format="TCHW", pts_unit="sec")
+        total, fps = _probe(video_path)
+        if total <= 0 or fps <= 0:
+            # 容器没写帧数时退回全解码
+            vframes, _, info = read_video(video_path, output_format="TCHW")
+            total, fps = vframes.shape[0], float(info["video_fps"] or 30.0)
+            plan = _plan_frame_index(total, max(int(fps), 1), self._num_samples)
+            wanted, inverse = torch.unique(plan.flatten(), return_inverse=True)
+            frames = vframes.index_select(0, wanted)
+        else:
+            plan = _plan_frame_index(total, max(int(fps), 1), self._num_samples)
+            wanted, inverse = torch.unique(plan.flatten(), return_inverse=True)
+            frames = _decode_selected(video_path, wanted)
 
-        label = file_info_dict["label"]
-        disease = file_info_dict["disease"]
+        n_chunks = plan.shape[0]
+
+        # 先 /255 再 resize,与旧的 Div255 → Resize 顺序一致(uint8 上插值会有量化损失)
+        video = F.interpolate(
+            frames.float().div_(255.0),
+            size=(self._img_size, self._img_size),
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )
+        video = video.index_select(0, inverse).view(
+            n_chunks, self._num_samples, *video.shape[1:]
+        )
+        video = video.permute(0, 2, 1, 3, 4).contiguous()  # (n_chunks, C, T, H, W)
 
         if self.attn_map is not None:
-            attn_map = self.attn_map(
+            attn = self.attn_map.build(
                 video_name=video_name,
-                video_path=video_path,
-                disease=disease,
-                vframes=vframes,
+                frame_idx=wanted,
+                out_size=(self._img_size, self._img_size),
             )
         else:
-            attn_map = torch.zeros((vframes.shape[0], 1, vframes.shape[2], vframes.shape[3]))
+            attn = torch.zeros((wanted.numel(), 1, self._img_size, self._img_size))
 
-        transformed_vframes = self.move_transform(vframes, int(info["video_fps"]))
-        transformed_attn_map = self.move_transform(attn_map, int(info["video_fps"]))
+        if LEGACY_ATTN_DIV255:
+            attn = attn / 255.0
+
+        attn = attn.index_select(0, inverse).view(
+            n_chunks, self._num_samples, *attn.shape[1:]
+        )
+        attn = attn.permute(0, 2, 1, 3, 4).contiguous()
 
         return {
-            "video": transformed_vframes,
-            "label": label,
-            "attn_map": transformed_attn_map,
-            "disease": disease,
+            "video": video,
+            "label": file_info_dict["label"],
+            "attn_map": attn,
+            "disease": file_info_dict["disease"],
             "video_name": video_name,
             "video_index": index,
         }
@@ -140,16 +226,20 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
 
 def whole_video_dataset(
     experiment: str,
-    transform: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
     dataset_idx: list = [],
+    img_size: int = 224,
+    num_samples: int = 8,
     doctor_res_path: str = "",
     skeleton_path: str = "",
+    attn_map: Optional[MedAttnMap] = None,
     clip_duration: int = 1,
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
         experiment=experiment,
-        transform=transform,
         labeled_video_paths=dataset_idx,
+        img_size=img_size,
+        num_samples=num_samples,
         doctor_res_path=doctor_res_path,
         skeleton_path=skeleton_path,
+        attn_map=attn_map,
     )

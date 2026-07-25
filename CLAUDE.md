@@ -45,7 +45,9 @@ analysis/run_tsne.sh
 
 1. **入口** `project/main.py`:Hydra 加载配置 → `DefineCrossValidation()` 返回 `{fold: {train: [json路径], val: [json路径]}}` → 逐折调用 `train()`,每折独立 fit + test。
 2. **交叉验证** `project/cross_validation.py`:`StratifiedGroupKFold(K=10)` 按患者名分组防泄漏;过滤含 "HipOA" 的患者名(FIXME 数据不均衡);`magic_move` 在 train/val 间交换非 ASD 患者;结果缓存到 `index_mapping/`。
-3. **数据** `project/dataloader/`:`WalkDataModule` → `whole_video_dataset.LabeledGaitVideoDataset`:读 json 元信息 → PyAV 全帧解码(视频路径按 `json_mix/` → `video/` 前缀重映射,不用 json 里写死的旧绝对路径)→ `MedAttnMap` 把医生 CSV 关注区域映射到 COCO 关键点、结合骨架 pkl 生成逐帧高斯热图 → `move_transform` 按秒切 gait 段、每段 `UniformTemporalSubsample(8)` + `Div255` + `Resize(224)` → `collate_fn` 把一条视频的所有段沿 batch 维拼接(所以 `batch_size=1` 时实际 batch 是段数)。
+3. **数据** `project/dataloader/`:采样计划先行——`_plan_frame_index` 先按"每秒一段、每段均匀取 8 帧"算出最终保留的全局帧下标,再只解码这些帧(`_decode_selected` 跳过无用帧的 rgb24 转换)、只为这些帧生成注意力图(`MedAttnMap.build` 用可分离高斯做批量矩阵乘,直接在 224 上生成)。视频路径按 `json_mix/` → `video/` 前缀重映射,不用 json 里写死的旧绝对路径。`collate_fn` 把一条视频的所有段沿 batch 维拼接,所以 `batch_size=1` 时实际 batch 是段数。
+   - 改这部分时注意保持采样语义:`_plan_frame_index` 必须与 `UniformTemporalSubsample` 的 `round(linspace(0, L-1, n))` 一致,段长不足时靠重复帧补齐。
+   - `whole_video_dataset.LEGACY_ATTN_DIV255`:旧实现让 video 和 attn 共用同一个 Compose,其中 `Div255` 也除在了本就 [0,1] 的高斯图上。模型里 `downsample_attn_to_tokens` 会做 min-max 归一化基本抵消掉,但 `ChannelMapGuidedVideoEncoder` 直接把原始均值喂进 MLP,尺度有影响。目前保持与既有实验一致,重设计实验时可考虑改成 False。
 4. **模型** `project/models/clip_align.py` `VideoAttentionCLIP`:视频编码器 = slow_r50 预训练 ResNet3D,`map_guided_type` 三选一(`spatiotemporal` token 门控+注意力池化 / `channel` MLP 通道门控 / `weighted_pool` 仅加权池化);注意图编码器 = 1 通道 ResNet3D(不预训练);两路 `ClipProjectionHead` 输出归一化 embedding 做 InfoNCE(可学习温度);分类头按 `clip_classifier_source`(默认 video)取特征。
 5. **训练** `project/trainer/train_clip_align.py` `CLIPAlignModule`:`loss = CE + clip_weight×InfoNCE + lambda_token×token能量对齐`;test 阶段额外计算 video↔attn 检索 R@1/R@5、对齐相似度 gap/corr,并把 embeddings 存为 `.pt`。
 6. **backbone 分发**在 `main.py`:`model.backbone` = `clip` | `3dcnn` | `cnn_lstm` | `2dcnn` 对应 `trainer/` 下四个模块,后三者是基线对比,共用 `models/make_model.py`。
@@ -54,8 +56,7 @@ analysis/run_tsne.sh
 ## 已知坑与过时文档
 
 - **README 的用法章节是 954577e 重构前的旧内容,勿照搬**:`train.backbone`(实际是 `model.backbone`)、`gait_video_dataset.py`、`TemporalMix`、`scripts/eval.py`、"必须用 `python -m project.main`" 等均已失效或与现状相反。同样过时的 `.github/copilot-instructions.md` 已删除。
-- `main.py` 中 `EarlyStopping` 已创建但**没有**加入 `callbacks` 列表,实际未生效,每折跑满 `max_epochs`。
+- 训练**不使用** early stopping(按需求移除),每折固定跑满 `train.max_epochs`。
 - `train.attn_map=False` 分支不可用:引用不存在的 `dataset_idx['test']` 键,且 `collate_fn` 依赖 `attn_map` 键;保持默认 `True`。
-- val/test 的 DataLoader 设了 `drop_last=True`。
 - `config.yaml` 的 `model.model: "resnet"` 是残留配置,选择逻辑只看 `model.backbone`。
 - `logs/` 约 40 GB,其中 54 个 `.ckpt` 占几乎全部;指标/CSV/TensorBoard/embeddings 仅 64 MB。
