@@ -134,3 +134,6 @@ logs/
 
 # 提交时固化的作业清单,每次提交都会新生成
 pegasus/queue/
+
+# MPI 崩溃留下的 core dump, 单个约 1GB
+core.python.*

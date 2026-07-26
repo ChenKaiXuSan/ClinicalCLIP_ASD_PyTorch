@@ -17,16 +17,12 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
-from torchmetrics.classification import (
-    MulticlassAccuracy,
-    MulticlassF1Score,
-)
-
 from models.clip_align import (
     VideoAttentionCLIP,
     clip_contrastive_loss_with_scale,
 )
 from utils.helper import save_helper
+from utils.metrics import ClassificationMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +47,7 @@ class CLIPAlignModule(LightningModule):
 
         self.model = VideoAttentionCLIP(hparams)
 
-        self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
+        self.metrics = ClassificationMetrics(self.num_classes)
 
         self.save_root = hparams.log_path
 
@@ -86,10 +81,6 @@ class CLIPAlignModule(LightningModule):
         )
 
         probs = torch.softmax(logits, dim=1)
-        metrics = {
-            f"{stage}/video_acc": self._accuracy(probs, label),
-            f"{stage}/video_f1_score": self._f1_score(probs, label),
-        }
 
         self.log(
             f"{stage}/loss",
@@ -123,9 +114,7 @@ class CLIPAlignModule(LightningModule):
             batch_size=label.size(0),
             prog_bar=stage == "train",
         )
-        self.log_dict(
-            metrics, on_epoch=True, on_step=stage == "train", batch_size=label.size(0)
-        )
+        self.metrics.log(self, stage, probs, label, batch_size=label.size(0))
 
         return loss
 
@@ -170,13 +159,7 @@ class CLIPAlignModule(LightningModule):
             "test/loss", loss, on_epoch=True, on_step=False, batch_size=label.size(0)
         )
 
-        metric_dict = {
-            "test/video_acc": self._accuracy(probs, label),
-            "test/video_f1_score": self._f1_score(probs, label),
-        }
-        self.log_dict(
-            metric_dict, on_epoch=True, on_step=False, batch_size=label.size(0)
-        )
+        self.metrics.log(self, "test", probs, label, batch_size=label.size(0))
 
         self.test_pred_list.append(probs.detach().cpu())
         self.test_label_list.append(label.detach().cpu())

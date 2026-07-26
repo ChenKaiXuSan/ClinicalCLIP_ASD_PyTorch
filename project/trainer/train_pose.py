@@ -18,10 +18,10 @@ from typing import Dict
 import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
 
 from models.pose_stgcn import PoseSTGCN
 from utils.helper import save_helper
+from utils.metrics import ClassificationMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,7 @@ class PoseModule(LightningModule):
 
         self.model = PoseSTGCN(hparams)
         # 与 concept 一致:torchmetrics 默认 macro,即平衡准确率
-        self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
+        self.metrics = ClassificationMetrics(self.num_classes)
 
         self.save_root = hparams.log_path
 
@@ -58,13 +57,7 @@ class PoseModule(LightningModule):
         bs = label.size(0)
         self.log(f"{stage}/loss", loss, on_epoch=True, on_step=on_step,
                  batch_size=bs, prog_bar=True)
-        self.log_dict(
-            {
-                f"{stage}/video_acc": self._accuracy(probs, label),
-                f"{stage}/video_f1_score": self._f1_score(probs, label),
-            },
-            on_epoch=True, on_step=on_step, batch_size=bs,
-        )
+        self.metrics.log(self, stage, probs, label, batch_size=bs)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -86,12 +79,8 @@ class PoseModule(LightningModule):
 
         self.log("test/loss", F.cross_entropy(logits, label),
                  on_epoch=True, on_step=False, batch_size=label.size(0))
-        self.log_dict(
-            {
-                "test/video_acc": self._accuracy(probs, label),
-                "test/video_f1_score": self._f1_score(probs, label),
-            },
-            on_epoch=True, on_step=False, batch_size=label.size(0),
+        self.metrics.log(
+            self, "test", probs, label, batch_size=label.size(0)
         )
         self.test_pred_list.append(probs.detach().cpu())
         self.test_label_list.append(label.detach().cpu())

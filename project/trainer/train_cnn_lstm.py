@@ -29,14 +29,8 @@ from pytorch_lightning import LightningModule
 from torchvision.utils import save_image, flow_to_image
 
 from models.make_model import CNNLSTM
-
-from torchmetrics.classification import (
-    MulticlassAccuracy,
-    MulticlassPrecision,
-    MulticlassRecall,
-    MulticlassF1Score,
-    MulticlassConfusionMatrix,
-)
+from utils.helper import save_helper
+from utils.metrics import ClassificationMetrics
 
 class CNNLstmModule(LightningModule):
 
@@ -47,20 +41,23 @@ class CNNLstmModule(LightningModule):
         self.model_type = hparams.model.model
         # 与 concept/clip 共用 loss.lr,避免对比实验被不同学习率混淆
         self.lr = hparams.loss.lr
+        # 之前漏了 weight_decay,基线不带正则、主方法带,对比不公平
+        self.weight_decay = float(getattr(hparams.loss, "weight_decay", 0.001))
         self.num_classes = hparams.model.model_class_num
+        self.save_root = hparams.log_path
 
         # model define
 
         self.model = CNNLSTM(hparams)
-        
+
         # save the hyperparameters to the file and ckpt
         self.save_hyperparameters()
 
-        self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._precision = MulticlassPrecision(num_classes=self.num_classes)
-        self._recall = MulticlassRecall(num_classes=self.num_classes)
-        self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
-        self._confusion_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes)
+        self.metrics = ClassificationMetrics(self.num_classes)
+
+        # 测试期把预测存下来,交给 analysis/compare_concept_runs.py 与主方法同口径汇总
+        self.test_pred_list = []
+        self.test_label_list = []
 
     def forward(self, x):
         return self.model(x)
@@ -81,7 +78,7 @@ class CNNLstmModule(LightningModule):
         label = batch["label"].detach()  # b, c, t, h, w
         label = label.repeat_interleave(video.size()[2])
 
-        loss = self.single_logic(label, video)
+        loss = self.single_logic(label, video, "train")
 
         return loss
 
@@ -103,7 +100,7 @@ class CNNLstmModule(LightningModule):
         label = batch["label"].detach()  # b
 
         label = label.repeat_interleave(video.size()[2])
-        loss = self.single_logic(label, video)
+        loss = self.single_logic(label, video, "val")
 
     def test_step(self, batch, batch_idx):
         """
@@ -119,7 +116,22 @@ class CNNLstmModule(LightningModule):
 
         # not use the last frame
         label = label.repeat_interleave(video.size()[2])
-        loss = self.single_logic(label, video)
+        loss = self.single_logic(label, video, "test")
+
+    def on_test_epoch_end(self) -> None:
+        # 与 concept 分支存同样的东西,汇总脚本才能把基线和主方法放进一张表
+        save_helper(
+            all_pred=self.test_pred_list,
+            all_label=self.test_label_list,
+            fold=self._fold_name(),
+            save_path=self.save_root,
+            num_class=self.num_classes,
+        )
+
+    def _fold_name(self) -> str:
+        """从 logger 的 root_dir 取折号;fast_dev_run 下 logger 被禁用,root_dir 为 None。"""
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
 
     def configure_optimizers(self):
         """
@@ -130,7 +142,9 @@ class CNNLstmModule(LightningModule):
             lr_scheduler: the selected lr scheduler.
         """
 
-        optimzier = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimzier = torch.optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
 
         return {
             "optimizer": optimzier,
@@ -144,14 +158,15 @@ class CNNLstmModule(LightningModule):
     def _get_name(self):
         return self.model_type
 
-    def single_logic(self, label: torch.Tensor, video: torch.Tensor):
+    def single_logic(self, label: torch.Tensor, video: torch.Tensor, stage: str):
 
         b, c, t, h, w = video.shape
 
+        # CNNLSTM 直接吃 5D,内部自己按时间维展开,不能像 2dcnn 那样先 reshape 成 b*t
         # eval model, feed data here
         if self.training:
             preds = self.model(video)
-            
+
         else:
             with torch.no_grad():
                 preds = self.model(video)
@@ -162,72 +177,34 @@ class CNNLstmModule(LightningModule):
             preds.squeeze(dim=-1), label.long()
         )
 
-        self.save_log(preds, label, loss)
+        self.save_log(preds, label, loss, stage)
 
         return loss
 
-    def save_log(self, pred: torch.Tensor, label: torch.Tensor, loss):
+    def save_log(self, pred: torch.Tensor, label: torch.Tensor, loss, stage: str):
+        """记录 loss 与分类指标。
 
-        if self.training:
+        阶段必须显式传进来。原先靠 `self.training` 分两支,test 阶段
+        `self.training` 同样是 False,于是测试结果被写到了 `val/` 前缀下 ——
+        B1_2dcnn / B2_cnn_lstm 的 test_metrics.txt 里只有 val 键就是这个原因。
+        """
 
-            preds = pred
+        preds = pred
+        if preds.size()[0] != 1 or len(preds.size()) != 1:
+            preds = preds.squeeze(dim=-1)
+        # 多分类一律走 softmax。旧代码在非训练分支用了 sigmoid,虽然不改 argmax、
+        # 指标不受影响,但存下来的"概率"不是概率,汇总脚本按概率处理会失真。
+        pred_softmax = torch.softmax(preds, dim=-1)
 
-            # when torch.size([1]), not squeeze.
-            if preds.size()[0] != 1 or len(preds.size()) != 1:
-                preds = preds.squeeze(dim=-1)
-                pred_softmax = torch.softmax(preds, dim=-1)
-            else:
-                pred_softmax = torch.softmax(preds)
+        self.log(
+            f"{stage}/loss",
+            loss,
+            on_epoch=True,
+            on_step=(stage == "train"),
+            batch_size=label.size()[0],
+        )
+        self.metrics.log(self, stage, pred_softmax, label, batch_size=label.size()[0])
 
-            # video rgb metrics
-            accuracy = self._accuracy(pred_softmax, label)
-            precision = self._precision(pred_softmax, label)
-            recall = self._recall(pred_softmax, label)
-            f1_score = self._f1_score(pred_softmax, label)
-            confusion_matrix = self._confusion_matrix(pred_softmax, label)
-
-            # log to tensorboard
-            self.log_dict(
-                {
-                    "train/loss": loss,
-                    "train/video_acc": accuracy,
-                    "train/video_precision": precision,
-                    "train/video_recall": recall,
-                    "train/video_f1_score": f1_score,
-                },
-                on_epoch=True,
-                on_step=True,
-                batch_size=label.size()[0],
-            )
-
-        else:
-
-            preds = pred
-
-            # when torch.size([1]), not squeeze.
-            if preds.size()[0] != 1 or len(preds.size()) != 1:
-                preds = preds.squeeze(dim=-1)
-                pred_softmax = torch.sigmoid(preds)
-            else:
-                pred_softmax = torch.sigmoid(preds)
-
-            # video rgb metrics
-            accuracy = self._accuracy(pred_softmax, label)
-            precision = self._precision(pred_softmax, label)
-            recall = self._recall(pred_softmax, label)
-            f1_score = self._f1_score(pred_softmax, label)
-            confusion_matrix = self._confusion_matrix(pred_softmax, label)
-
-            # log to tensorboard
-            self.log_dict(
-                {
-                    "val/loss": loss,
-                    "val/video_acc": accuracy,
-                    "val/video_precision": precision,
-                    "val/video_recall": recall,
-                    "val/video_f1_score": f1_score,
-                },
-                on_epoch=True,
-                on_step=True,
-                batch_size=label.size()[0],
-            )
+        if stage == "test":
+            self.test_pred_list.append(pred_softmax.detach().cpu())
+            self.test_label_list.append(label.detach().long().cpu())

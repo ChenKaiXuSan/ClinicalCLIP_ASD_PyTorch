@@ -36,15 +36,9 @@ import logging
 
 from pytorch_lightning import LightningModule
 
-from torchmetrics.classification import (
-    MulticlassAccuracy,
-    MulticlassPrecision,
-    MulticlassRecall,
-    MulticlassF1Score,
-    MulticlassConfusionMatrix
-)
-
 from models.make_model import MakeVideoModule
+from utils.helper import save_helper
+from utils.metrics import ClassificationMetrics
 
 class SingleModule(LightningModule):
     def __init__(self, hparams):
@@ -53,20 +47,24 @@ class SingleModule(LightningModule):
         self.img_size = hparams.data.img_size
         # 与 concept/clip 共用 loss.lr,避免对比实验被不同学习率混淆
         self.lr = hparams.loss.lr
+        # 之前这里直接 Adam(params, lr),把配置里的 weight_decay 丢了,而 concept/clip/pose
+        # 都用上了 —— 基线不带正则、主方法带,对比不公平
+        self.weight_decay = float(getattr(hparams.loss, "weight_decay", 0.001))
 
         self.num_classes = hparams.model.model_class_num
+        self.save_root = hparams.log_path
 
         # define model
-        self.video_cnn = MakeVideoModule(hparams)() 
+        self.video_cnn = MakeVideoModule(hparams)()
 
         # save the hyperparameters to the file and ckpt
         self.save_hyperparameters()
 
-        self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._precision = MulticlassPrecision(num_classes=self.num_classes)
-        self._recall = MulticlassRecall(num_classes=self.num_classes)
-        self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
-        self._confusion_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes)
+        self.metrics = ClassificationMetrics(self.num_classes)
+
+        # 测试期把预测存下来,交给 analysis/compare_concept_runs.py 与主方法同口径汇总
+        self.test_pred_list: List[torch.Tensor] = []
+        self.test_label_list: List[torch.Tensor] = []
 
     def forward(self, x):
         return self.video_cnn(x)
@@ -92,23 +90,7 @@ class SingleModule(LightningModule):
         loss = F.cross_entropy(video_preds, label.long())
 
         self.log("train/loss", loss, on_epoch=True, on_step=True)
-
-        # log metrics
-        video_acc = self._accuracy(video_preds_softmax, label)
-        video_precision = self._precision(video_preds_softmax, label)
-        video_recall = self._recall(video_preds_softmax, label)
-        video_f1_score = self._f1_score(video_preds_softmax, label)
-        video_confusion_matrix = self._confusion_matrix(video_preds_softmax, label)
-
-        self.log_dict(
-            {
-                "train/video_acc": video_acc,
-                "train/video_precision": video_precision,
-                "train/video_recall": video_recall,
-                "train/video_f1_score": video_f1_score,
-            }, 
-            on_epoch=True, on_step=True, batch_size=b
-        )
+        self.metrics.log(self, "train", video_preds_softmax, label, batch_size=b)
 
         return loss
 
@@ -133,23 +115,7 @@ class SingleModule(LightningModule):
         loss = F.cross_entropy(video_preds, label.long())
 
         self.log("val/loss", loss, on_epoch=True, on_step=True)
-
-        # log metrics
-        video_acc = self._accuracy(video_preds_softmax, label)
-        video_precision = self._precision(video_preds_softmax, label)
-        video_recall = self._recall(video_preds_softmax, label)
-        video_f1_score = self._f1_score(video_preds_softmax, label)
-        video_confusion_matrix = self._confusion_matrix(video_preds_softmax, label)
-        
-        self.log_dict(
-            {
-                "val/video_acc": video_acc,
-                "val/video_precision": video_precision,
-                "val/video_recall": video_recall,
-                "val/video_f1_score": video_f1_score,
-            },
-            on_epoch=True, on_step=True, batch_size=b
-        )
+        self.metrics.log(self, "val", video_preds_softmax, label, batch_size=b)
 
     def test_step(self, batch: torch.Tensor, batch_idx: int):
 
@@ -171,31 +137,25 @@ class SingleModule(LightningModule):
         loss = F.cross_entropy(video_preds, label.long())
 
         self.log("test/loss", loss, on_epoch=True, on_step=True)
+        self.metrics.log(self, "test", video_preds_softmax, label, batch_size=b)
 
-        # log metrics
-        video_acc = self._accuracy(video_preds_softmax, label)
-        video_precision = self._precision(video_preds_softmax, label)
-        video_recall = self._recall(video_preds_softmax, label)
-        video_f1_score = self._f1_score(video_preds_softmax, label)
-        video_confusion_matrix = self._confusion_matrix(video_preds_softmax, label)
+        self.test_pred_list.append(video_preds_softmax.detach().cpu())
+        self.test_label_list.append(label.detach().long().cpu())
 
-        self.log_dict(
-            {
-                "test/video_acc": video_acc,
-                "test/video_precision": video_precision,
-                "test/video_recall": video_recall,
-                "test/video_f1_score": video_f1_score,
-            },
-            on_epoch=True, on_step=True, batch_size=b
+    def on_test_epoch_end(self) -> None:
+        # 与 concept 分支存同样的东西,汇总脚本才能把基线和主方法放进一张表
+        save_helper(
+            all_pred=self.test_pred_list,
+            all_label=self.test_label_list,
+            fold=self._fold_name(),
+            save_path=self.save_root,
+            num_class=self.num_classes,
         )
 
-        return {
-            "video_acc": video_acc,
-            "video_precision": video_precision,
-            "video_recall": video_recall,
-            "video_f1_score": video_f1_score,
-            "video_confusion_matrix": video_confusion_matrix,
-        }
+    def _fold_name(self) -> str:
+        """从 logger 的 root_dir 取折号;fast_dev_run 下 logger 被禁用,root_dir 为 None。"""
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
 
     def configure_optimizers(self):
         """
@@ -206,7 +166,9 @@ class SingleModule(LightningModule):
             lr_scheduler: the selected lr scheduler.
         """
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
 
         return {
             "optimizer": optimizer,

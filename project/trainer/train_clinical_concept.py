@@ -22,7 +22,6 @@ from typing import Dict
 import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
 
 from models.clinical_concept import (
     REGIONS,
@@ -32,6 +31,7 @@ from models.clinical_concept import (
     presence_loss,
 )
 from utils.helper import save_helper
+from utils.metrics import ClassificationMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,7 @@ class ClinicalConceptModule(LightningModule):
         # (各类召回的均值),多数类预测器只得 1/num_classes 而非类别占比。
         # 论文里不要写成 accuracy。逐类与 micro 口径由
         # analysis/compare_concept_runs.py 从保存的预测中补算。
-        self._accuracy = MulticlassAccuracy(num_classes=self.num_classes)
-        self._f1_score = MulticlassF1Score(num_classes=self.num_classes)
+        self.metrics = ClassificationMetrics(self.num_classes)
 
         self.save_root = hparams.log_path
 
@@ -144,13 +143,7 @@ class ClinicalConceptModule(LightningModule):
                 f"{stage}/{name}", value, on_epoch=True, on_step=on_step,
                 batch_size=bs, prog_bar=name in ("loss", "loss_cls"),
             )
-        self.log_dict(
-            {
-                f"{stage}/video_acc": self._accuracy(probs, label),
-                f"{stage}/video_f1_score": self._f1_score(probs, label),
-            },
-            on_epoch=True, on_step=on_step, batch_size=bs,
-        )
+        self.metrics.log(self, stage, probs, label, batch_size=bs)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -222,12 +215,8 @@ class ClinicalConceptModule(LightningModule):
 
         self.log("test/loss", F.cross_entropy(logits, label),
                  on_epoch=True, on_step=False, batch_size=label.size(0))
-        self.log_dict(
-            {
-                "test/video_acc": self._accuracy(probs, label),
-                "test/video_f1_score": self._f1_score(probs, label),
-            },
-            on_epoch=True, on_step=False, batch_size=label.size(0),
+        self.metrics.log(
+            self, "test", probs, label, batch_size=label.size(0)
         )
 
         self.test_pred_list.append(probs.detach().cpu())
