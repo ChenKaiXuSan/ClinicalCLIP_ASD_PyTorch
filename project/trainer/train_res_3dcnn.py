@@ -36,6 +36,8 @@ import logging
 
 from pytorch_lightning import LightningModule
 
+from utils.helper import save_helper
+
 from torchmetrics.classification import (
     MulticlassAccuracy,
     MulticlassPrecision,
@@ -55,6 +57,8 @@ class SingleModule(LightningModule):
         self.lr = hparams.loss.lr
 
         self.num_classes = hparams.model.model_class_num
+
+        self.save_root = getattr(hparams, 'log_path', None)
 
         # define model
         self.video_cnn = MakeVideoModule(hparams)() 
@@ -171,6 +175,8 @@ class SingleModule(LightningModule):
         loss = F.cross_entropy(video_preds, label.long())
 
         self.log("test/loss", loss, on_epoch=True, on_step=True)
+        self.test_pred_list.append(video_preds_softmax.detach().cpu())
+        self.test_label_list.append(label.detach().long().cpu())
 
         # log metrics
         video_acc = self._accuracy(video_preds_softmax, label)
@@ -217,3 +223,23 @@ class SingleModule(LightningModule):
                 "monitor": "train/loss",
             },
         }
+
+    def _fold_name(self) -> str:
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
+
+    def on_test_start(self) -> None:
+        self.test_pred_list: list[torch.Tensor] = []
+        self.test_label_list: list[torch.Tensor] = []
+
+    def on_test_epoch_end(self) -> None:
+        # 保存原始预测:逐 batch 平均的指标在 batch_size=1(单类别 batch)下不可信,
+        # 必须能事后从预测重算 macro / micro / 逐类召回
+        if self.test_pred_list and self.save_root:
+            save_helper(
+                all_pred=self.test_pred_list,
+                all_label=self.test_label_list,
+                fold=self._fold_name(),
+                save_path=self.save_root,
+                num_class=self.num_classes,
+            )

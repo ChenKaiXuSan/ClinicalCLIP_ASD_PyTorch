@@ -128,8 +128,11 @@ def main() -> None:
         summary[name] = {"n_fold": len(runs), **row}
         print(f"{name:32s}" + "".join(f"{row[k]:16.4f}" for k in METRIC_KEYS))
 
-    print("\n注:上表 video_acc 为 macro 平均(平衡准确率),多数类预测器基线 1/C,"
-          "不是类别占比。")
+    print("\n⚠ 上表来自训练日志,**不可直接引用**:这些值是逐 batch 的 macro 值再平均,"
+          "而 batch_size=1 时每个 batch 只含一条视频、只有一个类别,torchmetrics 会忽略"
+          "缺席的类,于是'全预测多数类'也能得高分。实测 clip_old 日志 0.698 而真实 macro"
+          " 0.720,pose 日志 0.543 而真实 macro 0.333(已完全退化成单类)。"
+          "\n以下由原始预测重算的结果才是准的。")
 
     # 从原始预测补算各口径,避免只看一个数被误读
     print("\n=== 各口径准确率(由 best_preds 补算)===")
@@ -140,10 +143,13 @@ def main() -> None:
             continue
         summary[name]["posthoc"] = extra
         per_class = " ".join(f"{r:.3f}" for r in extra["per_class_recall"])
+        # 预测全落在一个类上 = 训练退化,这种结果不能当作有效基线
+        collapsed = sum(1 for r in extra["per_class_recall"] if r > 0.01) <= 1
+        flag = "  ⚠ 退化成单类" if collapsed else ""
         print(
             f"{name:32s} macro {extra['acc_macro']:.4f} (基线 {extra['baseline_macro']:.3f}) | "
             f"micro {extra['acc_micro']:.4f} (基线 {extra['baseline_micro']:.3f}) | "
-            f"逐类召回 {per_class} | n={extra['n_sample']}"
+            f"逐类召回 {per_class} | n={extra['n_sample']}{flag}"
         )
 
     # 消融对照:同名去掉 _shuffled 的两个实验配对

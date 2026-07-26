@@ -26,6 +26,8 @@ import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 
+from utils.helper import save_helper
+
 from torchvision.utils import save_image, flow_to_image
 
 from models.make_model import CNNLSTM
@@ -48,6 +50,7 @@ class CNNLstmModule(LightningModule):
         # 与 concept/clip 共用 loss.lr,避免对比实验被不同学习率混淆
         self.lr = hparams.loss.lr
         self.num_classes = hparams.model.model_class_num
+        self.save_root = getattr(hparams, 'log_path', None)
 
         # model define
 
@@ -106,20 +109,20 @@ class CNNLstmModule(LightningModule):
         loss = self.single_logic(label, video)
 
     def test_step(self, batch, batch_idx):
-        """
-        test step when trainer.test called
-
-        Args:
-            batch (3D tensor): b, c, t, h, w
-            batch_idx (_type_): _description_
-        """
-         # input and model define
-        video = batch["video"].detach()  # b, c, t, h, w
-        label = batch["label"].detach()  # b
-
-        # not use the last frame
+        """test step。原实现走 single_logic -> save_log,而 save_log 只按
+        self.training 分支,于是 test 指标被记成 val/*,CSV 里没有 test/* 列。
+        这里独立实现,并累积原始预测。"""
+        video = batch["video"].detach()
+        label = batch["label"].detach()
         label = label.repeat_interleave(video.size()[2])
-        loss = self.single_logic(label, video)
+
+        with torch.no_grad():
+            preds = self.model(video)
+        preds = preds.squeeze(dim=-1)
+        probs = torch.softmax(preds, dim=-1)
+        loss = F.cross_entropy(preds, label.long())
+
+        self._log_test(probs, label, loss)
 
     def configure_optimizers(self):
         """
@@ -230,4 +233,39 @@ class CNNLstmModule(LightningModule):
                 on_epoch=True,
                 on_step=True,
                 batch_size=label.size()[0],
+            )
+
+    def _log_test(self, probs, label, loss):
+        bs = label.size(0)
+        self.log("test/loss", loss, on_epoch=True, on_step=False, batch_size=bs)
+        self.log_dict(
+            {
+                "test/video_acc": self._accuracy(probs, label),
+                "test/video_precision": self._precision(probs, label),
+                "test/video_recall": self._recall(probs, label),
+                "test/video_f1_score": self._f1_score(probs, label),
+            },
+            on_epoch=True, on_step=False, batch_size=bs,
+        )
+        self.test_pred_list.append(probs.detach().cpu())
+        self.test_label_list.append(label.detach().cpu())
+
+    def _fold_name(self) -> str:
+        root_dir = getattr(self.logger, "root_dir", None) if self.logger else None
+        return root_dir.split("/")[-1] if root_dir else "fold"
+
+    def on_test_start(self) -> None:
+        self.test_pred_list: list[torch.Tensor] = []
+        self.test_label_list: list[torch.Tensor] = []
+
+    def on_test_epoch_end(self) -> None:
+        # 保存原始预测:逐 batch 平均的指标在 batch_size=1(单类别 batch)下不可信,
+        # 必须能事后从预测重算 macro / micro / 逐类召回
+        if self.test_pred_list and self.save_root:
+            save_helper(
+                all_pred=self.test_pred_list,
+                all_label=self.test_label_list,
+                fold=self._fold_name(),
+                save_path=self.save_root,
+                num_class=self.num_classes,
             )

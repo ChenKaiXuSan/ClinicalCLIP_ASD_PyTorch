@@ -85,22 +85,56 @@ class PoseSTGCN(nn.Module):
         hidden = int(getattr(cfg, "pose_hidden_dim", 64))
 
         self.register_buffer("adj", build_adjacency())
-        self.data_bn = nn.BatchNorm1d(3 * NUM_JOINTS)
+        self.in_channels = 5  # xy(髋中心对齐) + 置信度 + 速度
+        self.data_bn = nn.BatchNorm1d(self.in_channels * NUM_JOINTS)
 
         self.blocks = nn.ModuleList([
-            STGCNBlock(3, hidden),
+            STGCNBlock(self.in_channels, hidden),
             STGCNBlock(hidden, hidden),
             STGCNBlock(hidden, hidden * 2),
             STGCNBlock(hidden * 2, hidden * 2),
         ])
+        # 仅 63 名患者、8 帧窗口, 不加正则会立刻记住个体身份
+        self.dropout = nn.Dropout(float(getattr(cfg, 'pose_dropout', 0.5)))
         self.classifier = nn.Linear(hidden * 2, num_classes)
 
+    @staticmethod
+    def normalize_skeleton(pose: torch.Tensor) -> torch.Tensor:
+        """把绝对画面坐标转成与身体对齐的表示,并补上关节速度。
+
+        直接喂画面绝对坐标会让模型去记"患者站在画面哪个位置"而不是步态本身:
+        实测未归一化时 val_loss 从第 0 个 epoch 就单调上升(1.08→4.49),
+        最终退化成只预测多数类。这里做 ST-GCN 的标准处理:
+
+          1. 以髋中点为原点(消除位置)
+          2. 以躯干长度(肩中点到髋中点)为尺度(消除个体体型与拍摄距离)
+          3. 追加帧间位移作为速度通道 —— 步态的判别信息主要在运动而非静态姿势
+
+        Args:
+            pose: (B, T, V, 3) = 归一化坐标 xy + 置信度
+        Returns:
+            (B, T, V, 5) = 对齐后的 xy + 置信度 + 速度 dxdy
+        """
+        xy, conf = pose[..., :2], pose[..., 2:3]
+
+        hip = xy[:, :, [11, 12], :].mean(dim=2, keepdim=True)      # 髋中点
+        shoulder = xy[:, :, [5, 6], :].mean(dim=2, keepdim=True)   # 肩中点
+        centered = xy - hip
+        torso = (shoulder - hip).norm(dim=-1, keepdim=True)
+        centered = centered / torso.clamp_min(1e-3)
+
+        velocity = torch.zeros_like(centered)
+        velocity[:, 1:] = centered[:, 1:] - centered[:, :-1]
+
+        return torch.cat([centered, conf, velocity], dim=-1)
+
     def forward(self, pose: torch.Tensor) -> dict[str, torch.Tensor]:
+        pose = self.normalize_skeleton(pose)
         # pose: (B, T, V, C) -> (B, C, T, V)
         b, t, v, c = pose.shape
         x = pose.permute(0, 3, 1, 2).contiguous()
 
-        # 逐关节通道做归一化,消除不同视频的尺度/位置差异
+        # 逐关节通道做归一化,消除残余的尺度差异
         x = x.permute(0, 1, 3, 2).reshape(b, c * v, t)
         x = self.data_bn(x)
         x = x.reshape(b, c, v, t).permute(0, 1, 3, 2).contiguous()
@@ -109,4 +143,4 @@ class PoseSTGCN(nn.Module):
             x = block(x, self.adj)
 
         feat = x.mean(dim=(2, 3))  # 时空全局平均
-        return {"logits": self.classifier(feat), "feat": feat}
+        return {"logits": self.classifier(self.dropout(feat)), "feat": feat}
