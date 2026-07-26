@@ -1,14 +1,17 @@
 #!/bin/bash
 #PBS -A SKIING
 #PBS -q gpu
-#PBS -l elapstim_req=24:00:00
+#PBS -l elapstim_req=06:00:00
 #PBS -N cclip_matrix
 #PBS -o logs/pegasus/matrix_out.log
 #PBS -e logs/pegasus/matrix_err.log
 
 # 实验矩阵的数组作业:**一个 sub-request = 一个节点 = 一个配置的一折**。
-# 队列的单请求上限就是 24 小时,而 100 epochs 的视频类实验实测 5.3 小时(bf16)/
-# 8.3 小时(fp32),一折一节点留足了余量;姿态基线约 0.7 小时。
+#
+# 请求 6 小时而不是队列上限的 24 小时。H100 上 fold0 实测最长的 B2_cnn_lstm 是
+# 4 小时 35 分,concept 系列 2 小时 30 分,B3_pose 25 分 —— 6 小时有 30% 余量。
+# **不要图省事填 24 小时**:维护窗口之前放不下 24 小时的请求,调度器会把作业一直
+# 压在队列里不发,哪怕上百个节点空着。提交时用 ELAPS 覆盖(见 submit_matrix.sh)。
 #
 # 不要直接 qsub 这个文件 —— 数组范围和作业清单由提交脚本生成:
 #   bash pegasus/submit_matrix.sh

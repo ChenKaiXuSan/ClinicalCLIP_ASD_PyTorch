@@ -10,6 +10,7 @@
 #   SEEDS=42,1337,2024 GROUP=main bash pegasus/submit_matrix.sh   # ④ 多种子方差
 #   DRYRUN=1 ...                                             # 只生成清单不提交
 #   FORCE=1 ...                                              # 忽略 done 标记,全部重跑
+#   ELAPS=05:00:00 ...                                       # 压缩墙钟请求以塞进维护窗口前
 #
 # 断点续跑:直接把同一条命令再敲一遍。已经写下 done 标记的任务会被剔除,
 # 只有失败/没跑到的会重新排队。
@@ -26,6 +27,10 @@ SEEDS="${SEEDS:-42}"
 EPOCHS="${EPOCHS:-100}"      # 统一 100 epochs,不用 early stopping
 PRECISION="${PRECISION:-bf16-mixed}"   # 实测比 fp32 快 1.56 倍;整个矩阵必须同一精度
 NUM_WORKERS="${NUM_WORKERS:-12}"
+# 单个 sub-request 的墙钟上限。H100 实测最长 4 小时 35 分(B2_cnn_lstm),留 30% 余量。
+# 别填成队列上限 24:00:00 —— 维护窗口之前放不下,调度器会把作业压在队列里不发,
+# 哪怕整个集群空着。窗口紧张时按实测值再压:ELAPS=05:00:00 ...
+ELAPS="${ELAPS:-06:00:00}"
 EXPECT_FOLD="${EXPECT_FOLD:-5}"        # index_mapping 缓存必须是这个折数
 CHUNK="${CHUNK:-150}"        # 队列上限:一个批处理请求最多 150 个 sub-request
 DRYRUN="${DRYRUN:-0}"
@@ -116,7 +121,7 @@ done
 
 total=$(wc -l < "${ALL_LIST}")
 echo "GROUP=${GROUP}  FOLDS=${FOLDS}  SEEDS=${SEEDS}  EPOCHS=${EPOCHS}  PRECISION=${PRECISION}"
-echo "待提交 ${total} 个任务(每个占一个节点,上限 24 小时);已完成跳过 ${skipped} 个"
+echo "待提交 ${total} 个任务(每个占一个节点,墙钟上限 ${ELAPS});已完成跳过 ${skipped} 个"
 if (( total == 0 )); then
     echo "没有需要跑的任务。"
     rm -f "${ALL_LIST}"
@@ -145,9 +150,10 @@ ENV
     awk -F'\t' '{printf "    [%2d] %s\n", NR-1, $1}' "${prefix}.tsv"
 
     if [[ "${DRYRUN}" == "1" ]]; then
-        echo "    DRYRUN: qsub -t 0-$((n - 1)) -v MATRIX_RUN=${prefix} pegasus/matrix_job.sh"
+        echo "    DRYRUN: qsub -t 0-$((n - 1)) -l elapstim_req=${ELAPS} -v MATRIX_RUN=${prefix} pegasus/matrix_job.sh"
     else
         qsub -t "0-$((n - 1))" \
+            -l "elapstim_req=${ELAPS}" \
             -N "cclip_mx${part}" \
             -v "MATRIX_RUN=${prefix}" \
             -o "logs/pegasus/matrix_${STAMP}_p${part}_out.log" \
