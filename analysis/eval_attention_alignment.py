@@ -142,7 +142,12 @@ def main() -> None:
     cam_engine = None
     if args.ckpt:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "project"))
+        from omegaconf import OmegaConf
         from trainer.train_res_3dcnn import SingleModule
+
+        # checkpoint 里存的超参含 Hydra 的 ${now:...} 插值,脱离 Hydra 无法解析
+        if not OmegaConf.has_resolver("now"):
+            OmegaConf.register_new_resolver("now", lambda pattern="": "eval")
 
         module = SingleModule.load_from_checkpoint(args.ckpt, map_location=device)
         module.eval().to(device)
