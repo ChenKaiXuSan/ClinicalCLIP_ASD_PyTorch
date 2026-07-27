@@ -49,9 +49,11 @@ class MakeVideoModule(nn.Module):
 
         if self.transfer_learning:
             slow = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
-            
-            # for the folw model and rgb model 
-            slow.blocks[0].conv = nn.Conv3d(input_channel, 64, kernel_size=(1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
+
+            # 和 2D 那两处同一个坑:原来无条件把 blocks[0].conv 换成随机初始化的
+            # Conv3d,而调用方传的就是默认 3 通道 —— Kinetics 预训练的 3D stem 被
+            # 整个扔掉。B0_3dcnn 是全文最重要的基线,不能带着这个跑。
+            _patch_stem_conv3d(slow, input_channel, pretrained=True)
             # change the knetics-400 output 400 to model class num
             slow.blocks[-1].proj = nn.Linear(2048, self.model_class_num)
 
@@ -103,6 +105,27 @@ class MakeImageModule(nn.Module):
             return self.make_resnet()
         else:
             raise KeyError(f"the model name {self.model_name} is not in the model zoo")
+
+def _patch_stem_conv3d(model: nn.Module, in_channels: int, pretrained: bool) -> None:
+    """slow_r50 的 3D 版本,逻辑同 _patch_resnet_stem。"""
+    old_conv = model.blocks[0].conv
+    if old_conv.in_channels == in_channels:
+        return
+
+    new_conv = nn.Conv3d(
+        in_channels,
+        old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=old_conv.bias is not None,
+    )
+    if pretrained:
+        with torch.no_grad():
+            avg_weight = old_conv.weight.mean(dim=1, keepdim=True)
+            new_conv.weight.copy_(avg_weight.repeat(1, in_channels, 1, 1, 1))
+    model.blocks[0].conv = new_conv
+
 
 def _patch_resnet_stem(model: nn.Module, in_channels: int, pretrained: bool) -> None:
     """只在通道数确实不同时才换掉 stem,换的时候也从预训练权重初始化。

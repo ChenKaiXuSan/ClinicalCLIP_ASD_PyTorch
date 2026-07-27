@@ -105,13 +105,37 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 ALL_LIST="${QUEUE_DIR}/${STAMP}.all.tsv"
 : > "${ALL_LIST}"
 
+# 在飞的任务也要剔除。done 标记只在任务**成功结束**时才写,光看它的话,
+# 对着一批还在跑的作业再敲一次同样的命令,会把它们原样再提交一遍 —— 同一个
+# tag 两个节点同时跑、写同一个日志和同一个 log_path,结果没法分辨是哪一次的。
+declare -A INFLIGHT=()
+if [[ "${FORCE}" != "1" ]]; then
+    while read -r qtag; do
+        [[ -n "${qtag}" ]] && INFLIGHT["${qtag}"]=1
+    done < <(
+        for f in "${QUEUE_DIR}"/*.tsv; do
+            [[ -e "$f" ]] || continue
+            cut -f1 "$f"
+        done 2>/dev/null | sort -u
+    )
+    # 队列里已经没有 ClinicalCLIP 作业时,历史清单就不该再拦人
+    if ! qstat 2>/dev/null | grep -q "cclip_mx"; then
+        INFLIGHT=()
+    fi
+fi
+
 skipped=0
+inflight=0
 for fold in $(expand_folds "${FOLDS}"); do
     for seed in ${SEEDS//,/ }; do
         for i in "${!NAMES[@]}"; do
             tag="${NAMES[$i]}__f${fold}_s${seed}"
             if [[ -f "${OUT_DIR}/done/${tag}.done" && "${FORCE}" != "1" ]]; then
                 skipped=$((skipped + 1))
+                continue
+            fi
+            if [[ -n "${INFLIGHT[${tag}]:-}" ]]; then
+                inflight=$((inflight + 1))
                 continue
             fi
             printf '%s\t%s\t%s\t%s\n' "${tag}" "${fold}" "${seed}" "${ARGSS[$i]}" >> "${ALL_LIST}"
@@ -121,7 +145,7 @@ done
 
 total=$(wc -l < "${ALL_LIST}")
 echo "GROUP=${GROUP}  FOLDS=${FOLDS}  SEEDS=${SEEDS}  EPOCHS=${EPOCHS}  PRECISION=${PRECISION}"
-echo "待提交 ${total} 个任务(每个占一个节点,墙钟上限 ${ELAPS});已完成跳过 ${skipped} 个"
+echo "待提交 ${total} 个任务(每个占一个节点,墙钟上限 ${ELAPS});已完成跳过 ${skipped} 个,在队列里跳过 ${inflight} 个"
 if (( total == 0 )); then
     echo "没有需要跑的任务。"
     rm -f "${ALL_LIST}"
