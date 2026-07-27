@@ -251,7 +251,7 @@ class SpatiotemporalMapGuidedVideoEncoder(nn.Module):
 
     Returns:
       video_feat:   (B, feature_dim)
-      video_tokens: (B, D, T', H', W') gated tokens (for visualization / regularization)
+      video_tokens: (B, D, T', H', W') **pre-gate** tokens (for visualization / regularization)
       attn_weight:  (B, 1, T', H', W') weight used for pooling (for visualization)
     """
 
@@ -307,7 +307,11 @@ class SpatiotemporalMapGuidedVideoEncoder(nn.Module):
         # pooled: (B, D)
 
         feat = self.fc(pooled)  # (B, feature_dim)
-        return feat, gated_tokens, attn_weight
+        # 返回**门控前**的 tokens。token_energy_alignment_loss 要衡量的是"编码器自发
+        # 关注的地方是否与医生一致",而门控已经做了 tokens * (1 + alpha * attn),
+        # 注意力高的位置能量必然被抬高 —— 拿门控后的 tokens 去算,量到的是门控本身,
+        # 这个损失就成了自我实现的,不管有没有学到对齐都会下降。
+        return feat, tokens, attn_weight
 
 
 class ChannelMapGuidedVideoEncoder(nn.Module):
@@ -357,7 +361,9 @@ class ChannelMapGuidedVideoEncoder(nn.Module):
         feat = self.fc(pooled)
 
         attn_weight = downsample_attn_to_tokens(attn_map, tokens)
-        return feat, gated_tokens, attn_weight
+        # 同样返回门控前的 tokens,与 spatiotemporal 分支口径一致。这里的门控是逐通道、
+        # 空间上均匀的,z-score 之后本来也不影响相关性,但保持一致省得日后误读。
+        return feat, tokens, attn_weight
 
 
 class WeightedPoolVideoEncoder(nn.Module):

@@ -57,7 +57,12 @@ model:
 
   map_guided: true
   map_guided_type: "spatiotemporal" # spatiotemporal | channel | weighted_pool
-  map_guided_hidden_dim: 64
+  # token 投影维度。map_guided 分支是 conv1x1(2048 -> 这个数) -> 门控 -> 池化 ->
+  # fc(-> clip_feature_dim),而 map_guided=false 分支是池化 -> fc(2048 -> clip_feature_dim)。
+  # 原来这里是 64,等于给"有 map guidance"那条臂加了个 32 倍的瓶颈,消融里两条臂
+  # 比的就不只是 guidance 本身,还有容量差。取 512 与另一条臂对齐。
+  # 要复现旧行为就覆盖 model.map_guided_hidden_dim=64。
+  map_guided_hidden_dim: 512
   map_guided_alpha: 1.0
   map_guided_sigmoid_gate: false
   lambda_token: 0.0
