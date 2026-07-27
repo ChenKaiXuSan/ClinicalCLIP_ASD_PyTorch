@@ -76,7 +76,7 @@ class CNNLstmModule(LightningModule):
 
         video = batch["video"].detach() # b, c, t, h, w
         label = batch["label"].detach()  # b, c, t, h, w
-        label = label.repeat_interleave(video.size()[2])
+        # CNNLSTM 每段输出一个预测,标签不展开到帧
 
         loss = self.single_logic(label, video, "train")
 
@@ -99,7 +99,7 @@ class CNNLstmModule(LightningModule):
         video = batch["video"].detach()  # b, c, t, h, w
         label = batch["label"].detach()  # b
 
-        label = label.repeat_interleave(video.size()[2])
+        # CNNLSTM 每段输出一个预测,标签不展开到帧
         loss = self.single_logic(label, video, "val")
 
     def test_step(self, batch, batch_idx):
@@ -115,7 +115,7 @@ class CNNLstmModule(LightningModule):
         label = batch["label"].detach()  # b
 
         # not use the last frame
-        label = label.repeat_interleave(video.size()[2])
+        # CNNLSTM 每段输出一个预测,标签不展开到帧
         loss = self.single_logic(label, video, "test")
 
     def on_test_epoch_end(self) -> None:

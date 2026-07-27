@@ -48,7 +48,10 @@ class CNNModule(LightningModule):
         # model define
 
         model = MakeImageModule(hparams)
-        self.model = model.make_resnet(self.num_classes)
+        # 注意 make_resnet 的入参是**输入通道数**,不是类别数(类别数它自己从 hparams 取)。
+        # 原来这里传的是 self.num_classes,靠三分类恰好等于 RGB 三通道才没炸;
+        # 改成两分类或四分类就会建出 2/4 通道的 stem。
+        self.model = model.make_resnet()
 
         # save the hyperparameters to the file and ckpt
         self.save_hyperparameters()

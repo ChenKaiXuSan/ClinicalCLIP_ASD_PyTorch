@@ -88,12 +88,13 @@ class MakeImageModule(nn.Module):
         self.model_class_num = hparams.model.model_class_num
         self.transfer_learning = hparams.train.transfer_learning
 
-    def make_resnet(self, input_channel:int = 3) -> nn.Module:
-        if self.transfer_learning:
-            model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
-            model.conv1 = nn.Conv2d(input_channel, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            model.fc = nn.Linear(2048, self.model_class_num)
-    
+    def make_resnet(self, input_channel: int = 3) -> nn.Module:
+        model = torch.hub.load(
+            'pytorch/vision:v0.10.0', 'resnet50', pretrained=self.transfer_learning
+        )
+        _patch_resnet_stem(model, input_channel, self.transfer_learning)
+        model.fc = nn.Linear(2048, self.model_class_num)
+
         return model
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -102,6 +103,36 @@ class MakeImageModule(nn.Module):
             return self.make_resnet()
         else:
             raise KeyError(f"the model name {self.model_name} is not in the model zoo")
+
+def _patch_resnet_stem(model: nn.Module, in_channels: int, pretrained: bool) -> None:
+    """只在通道数确实不同时才换掉 stem,换的时候也从预训练权重初始化。
+
+    原来的写法是无条件 `model.conv1 = nn.Conv2d(in_channels, 64, ...)`,而调用方传的
+    就是默认的 3 通道 —— 等于把 ImageNet 预训练的第一层卷积**扔掉换成随机初始化**,
+    随机特征喂给后面预训练好的 block。B1_2dcnn / B2_cnn_lstm 的验证集准确率整整
+    100 个 epoch 钉在 0.333(三分类的随机水平)、训练集却到 1.0,就是这么来的:
+    模型靠随机 stem 记住了训练集,学不到任何可迁移的东西。
+
+    clip_align._patch_stem_conv 一直是对的写法,这里对齐它。
+    """
+    old_conv = model.conv1
+    if old_conv.in_channels == in_channels:
+        return
+
+    new_conv = nn.Conv2d(
+        in_channels,
+        old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=old_conv.bias is not None,
+    )
+    if pretrained:
+        with torch.no_grad():
+            avg_weight = old_conv.weight.mean(dim=1, keepdim=True)
+            new_conv.weight.copy_(avg_weight.repeat(1, in_channels, 1, 1))
+    model.conv1 = new_conv
+
 
 class MakeOriginalTwoStream(nn.Module):
     '''
@@ -148,35 +179,32 @@ class CNNLSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=300, hidden_size=512, num_layers=2, batch_first=True)
         self.fc = nn.Linear(512, self.model_class_num)
 
-    def make_cnn(self, input_channel:int = 3):
+    def make_cnn(self, input_channel: int = 3):
 
-        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=True)
-
-        # from pytorchvision, use resnet 50.
-        # weights = ResNet50_Weights.DEFAULT
-        # model = resnet50(weights=weights)
-
-        # for the folw model and rgb model 
-        model.conv1 = nn.Conv2d(input_channel, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        # change the output 400 to model class num
+        model = torch.hub.load(
+            'pytorch/vision:v0.10.0', 'resnet50', pretrained=self.transfer_learning
+        )
+        # 和 MakeImageModule 同一个坑:无条件换掉 conv1 会丢掉 ImageNet 预训练的 stem
+        _patch_resnet_stem(model, input_channel, self.transfer_learning)
+        # change the output 400 to the lstm input size
         model.fc = nn.Linear(2048, 300)
 
-        return model    
-    
+        return model
+
     def forward(self, x):
 
         b, c, t, h, w = x.size()
 
-        res = []
+        # (b, c, t, h, w) -> (b*t, c, h, w),一次前向搞定。
+        # 原来是 `for i in range(b)` 逐条视频串行跑 resnet50,而这里的 b 是一条视频的
+        # gait 段数(最多 28),白白慢了一个数量级 —— B2_cnn_lstm 是全矩阵最慢的任务。
+        frames = x.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
+        feat = self.cnn(frames).reshape(b, t, -1)
 
-        for i in range(b):
-            hidden = None
-            out = self.cnn(x[i].permute(1, 0, 2, 3))
-            out, hidden = self.lstm(out, hidden)
-    
-            out = F.relu(out)
-            out = self.fc(out)
-        
-            res.append(out)
+        out, _ = self.lstm(feat)
 
-        return torch.cat(res, dim=0)
+        # 只取最后一个时间步:LSTM 存在的意义就是把整段聚合完再判类别。
+        # 原来对**每个**时间步都出一个预测(再由 trainer 把标签 repeat_interleave 成
+        # b*t 个),等于逼着模型在只看到第 1 帧时就定下类别,既不是标准的 CNN-LSTM
+        # 基线,也给指标掺进了大量必然错的预测。
+        return self.fc(F.relu(out[:, -1]))
