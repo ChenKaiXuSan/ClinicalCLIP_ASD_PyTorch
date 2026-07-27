@@ -32,10 +32,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "project"))
 
@@ -143,6 +145,14 @@ def main() -> None:
     if args.ckpt:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "project"))
         from trainer.train_res_3dcnn import SingleModule
+
+        # checkpoint 里存着整份 hydra 配置,其中 log_path 带 ${now:...} 插值。
+        # 这个 resolver 是 hydra 在运行时注册的,脱离 hydra 加载 checkpoint 会抛
+        # UnsupportedInterpolationType。这里补注册一个,值本身用不到。
+        if not OmegaConf.has_resolver("now"):
+            OmegaConf.register_new_resolver(
+                "now", lambda pattern="%Y-%m-%d": datetime.now().strftime(pattern)
+            )
 
         module = SingleModule.load_from_checkpoint(args.ckpt, map_location=device)
         module.eval().to(device)
