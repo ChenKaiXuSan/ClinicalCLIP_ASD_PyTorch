@@ -32,6 +32,13 @@ NUM_WORKERS="${NUM_WORKERS:-12}"
 # 哪怕整个集群空着。窗口紧张时按实测值再压:ELAPS=05:00:00 ...
 ELAPS="${ELAPS:-06:00:00}"
 EXPECT_FOLD="${EXPECT_FOLD:-5}"        # index_mapping 缓存必须是这个折数
+CLASS_NUM="${CLASS_NUM:-3}"            # 划分缓存按类别数分目录存放
+# 追加给每个任务的 Hydra 覆盖,以及加在实验名后的后缀。改任务定义时用,例如二分类:
+#   EXTRA="model.model_class_num=2" TAG_SUFFIX=_c2 GROUP=all FOLDS=0 bash pegasus/submit_matrix.sh
+# 后缀是必需的 —— 不加的话两种任务的结果会写进同一个 logs/train/<实验名>/ 目录,
+# 汇总脚本按目录取最新一次,新旧任务会互相覆盖。
+EXTRA="${EXTRA:-}"
+TAG_SUFFIX="${TAG_SUFFIX:-}"
 CHUNK="${CHUNK:-150}"        # 队列上限:一个批处理请求最多 150 个 sub-request
 DRYRUN="${DRYRUN:-0}"
 FORCE="${FORCE:-0}"
@@ -44,10 +51,10 @@ mkdir -p "${OUT_DIR}/done" "${QUEUE_DIR}" logs/pegasus
 
 # ---- 提交前检查:两个会让整批作业白跑的坑 ----
 
-INDEX_JSON="${DATA_ROOT}/clinical_CLIP_dataset/index_mapping/3/index.json"
+INDEX_JSON="${DATA_ROOT}/clinical_CLIP_dataset/index_mapping/${CLASS_NUM}/index.json"
 if [[ ! -f "${INDEX_JSON}" ]]; then
     echo "ERROR: 找不到交叉验证划分 ${INDEX_JSON}" >&2
-    echo "       先跑: bash pegasus/prepare_index.sh" >&2
+    echo "       先跑: CLASS_NUM=${CLASS_NUM} bash pegasus/prepare_index.sh" >&2
     exit 1
 fi
 actual_folds=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "${INDEX_JSON}")
@@ -139,7 +146,7 @@ inflight=0
 for fold in $(expand_folds "${FOLDS}"); do
     for seed in ${SEEDS//,/ }; do
         for i in "${!NAMES[@]}"; do
-            tag="${NAMES[$i]}__f${fold}_s${seed}"
+            tag="${NAMES[$i]}${TAG_SUFFIX}__f${fold}_s${seed}"
             if [[ -f "${OUT_DIR}/done/${tag}.done" && "${FORCE}" != "1" ]]; then
                 skipped=$((skipped + 1))
                 continue
@@ -155,6 +162,7 @@ done
 
 total=$(wc -l < "${ALL_LIST}")
 echo "GROUP=${GROUP}  FOLDS=${FOLDS}  SEEDS=${SEEDS}  EPOCHS=${EPOCHS}  PRECISION=${PRECISION}"
+[[ -n "${EXTRA}" ]] && echo "额外覆盖: ${EXTRA}   实验名后缀: ${TAG_SUFFIX:-<无>}"
 echo "待提交 ${total} 个任务(每个占一个节点,墙钟上限 ${ELAPS});已完成跳过 ${skipped} 个,在队列里跳过 ${inflight} 个"
 if (( total == 0 )); then
     echo "没有需要跑的任务。"
@@ -176,6 +184,7 @@ EPOCHS=${EPOCHS}
 PRECISION=${PRECISION}
 NUM_WORKERS=${NUM_WORKERS}
 OUT_DIR=${OUT_DIR}
+EXTRA="${EXTRA}"
 ENV
 
     n=$(wc -l < "${prefix}.tsv")

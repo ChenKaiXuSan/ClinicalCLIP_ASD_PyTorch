@@ -85,7 +85,7 @@ case "${PYTHON}" in
 esac
 
 # shellcheck disable=SC2086
-"${PYTHON}" project/main.py ${ARGS} \
+"${PYTHON}" project/main.py ${ARGS} ${EXTRA:-} \
     paths.root_path="${DATA_ROOT}" \
     train.experiment="${TAG}" \
     train.folds="[${FOLD}]" \

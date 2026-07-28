@@ -54,7 +54,7 @@ else
         mv "${INDEX_DIR}" "${BACKUP}"
     fi
 
-    CLINICALCLIP_DATA_ROOT="${DATA_ROOT}" FOLD="${FOLD}" python - <<'PY'
+    CLINICALCLIP_DATA_ROOT="${DATA_ROOT}" FOLD="${FOLD}" CLASS_NUM="${CLASS_NUM}" python - <<'PY'
 import os
 import sys
 
@@ -73,6 +73,8 @@ with initialize_config_dir(
         overrides=[
             f"paths.root_path={data_root}",
             f"train.fold={os.environ['FOLD']}",
+            # 划分缓存按类别数分目录;不传的话永远重建 3 类那一份
+            f"model.model_class_num={os.environ['CLASS_NUM']}",
         ],
     )
 
