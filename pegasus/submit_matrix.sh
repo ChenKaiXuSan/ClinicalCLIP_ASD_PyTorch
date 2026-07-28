@@ -57,6 +57,16 @@ if [[ "${actual_folds}" != "${EXPECT_FOLD}" ]]; then
     echo "       先跑: bash pegasus/prepare_index.sh  (旧缓存会被备份,不会删)" >&2
     exit 1
 fi
+# 旧缓存只有 train/val,拿它跑会静默退回 "val 即 test" 的有偏评估
+if ! python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+sys.exit(0 if all('test' in v for v in d.values()) else 1)" "${INDEX_JSON}"; then
+    echo "ERROR: 划分缓存是旧格式,每折只有 train/val,缺独立的 test。" >&2
+    echo "       用它跑等于 checkpoint 按 val 选完再在同一批数据上测,指标有偏。" >&2
+    echo "       先跑: bash pegasus/prepare_index.sh" >&2
+    exit 1
+fi
 
 expand_folds() {   # 支持 "0-4" / "0,3" / "0"
     local spec=$1 out=""

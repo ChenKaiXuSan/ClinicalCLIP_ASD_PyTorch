@@ -104,8 +104,13 @@ class DefineCrossValidation(object):
 
         return X, y, groups
 
+    # NOTE: magic_move 已移除(2026-07)。它给每个非 ASD 患者在 train/val 之间对搬一个
+    # 片段,直接制造患者级泄漏:5/5 折、46.8% 的验证样本来自训练见过的患者,而且只发生
+    # 在 DHS 与 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称地抬高。
+    # 它原本大概是为了让每折的 val 都凑齐三类;现在改用 train/val/test 三分,
+    # 内外两层都按患者分组,不需要再搬样本。旧实现见 git 历史。
     @staticmethod
-    def magic_move(train_mapped_path, val_mapped_path):
+    def _unused_magic_move(train_mapped_path, val_mapped_path):
 
         new_train_mapped_path = copy.deepcopy(train_mapped_path)
         new_val_mapped_path = copy.deepcopy(val_mapped_path)
@@ -162,10 +167,21 @@ class DefineCrossValidation(object):
 
     def prepare(self):
         """Define K-fold cross validation splits.
-        
+
+        每折产出 train / val / test 三份,三者按患者分组互不相交:
+
+            外层 StratifiedGroupKFold(K)     -> 留出 test(1/K)
+            内层 StratifiedGroupKFold(K-1)   -> 把剩下的开发集切成 train / val
+
+        K=5 时大致是 60 / 20 / 20。**val 只用来选 checkpoint,test 只用来报指标**,
+        测试集全程不参与任何决策。之前 val 与 test 是同一批数据,所有 test/* 都是
+        "在测试集上挑最好的 epoch 再报测试集成绩",是模型选择后的有偏估计。
+
+        两层都不 shuffle,所以划分是确定的,换机器重建结果一致。
+
         Returns:
             tuple: (ans_fold, X, y, groups)
-                - ans_fold: Dict with fold -> {'train': [paths], 'val': [paths]}
+                - ans_fold: Dict with fold -> {'train': [paths], 'val': [paths], 'test': [paths]}
                 - X: List of video paths
                 - y: List of labels
                 - groups: List of patient group indices
@@ -184,22 +200,22 @@ class DefineCrossValidation(object):
 
         sgkf = StratifiedGroupKFold(n_splits=K)
 
-        for i, (train_index, test_index) in enumerate(
+        for fold, (dev_index, test_index) in enumerate(
             sgkf.split(X=X, y=y, groups=groups)
         ):
-            # Use original train/val split from StratifiedGroupKFold
-            train_mapped_path = [X[i] for i in train_index]
-            val_mapped_path = [X[i] for i in test_index]
+            dev_X = [X[j] for j in dev_index]
+            dev_y = [y[j] for j in dev_index]
+            dev_groups = [groups[j] for j in dev_index]
 
-            # FIXME: magic move
-            train_mapped_path, val_mapped_path = self.magic_move(
-                train_mapped_path, val_mapped_path
+            inner = StratifiedGroupKFold(n_splits=K - 1)
+            train_local, val_local = next(
+                inner.split(X=dev_X, y=dev_y, groups=dev_groups)
             )
 
-            # * Save index mapping only, no video file copying
-            ans_fold[i] = {
-                'train': train_mapped_path,
-                'val': val_mapped_path,
+            ans_fold[fold] = {
+                'train': [dev_X[j] for j in train_local],
+                'val': [dev_X[j] for j in val_local],
+                'test': [X[j] for j in test_index],
             }
 
         return ans_fold, X, y, groups
@@ -213,17 +229,14 @@ class DefineCrossValidation(object):
 
             fold_dataset_idx, *_ = self.prepare()
 
-            json_fold_dataset_idx = copy.deepcopy(fold_dataset_idx)
-
-            for k, v in fold_dataset_idx.items():
-                # Convert Path objects to strings for JSON serialization
-                json_fold_dataset_idx[k] = {
-                    'train': [str(i) for i in v['train']],
-                    'val': [str(i) for i in v['val']],
-                }
+            json_fold_dataset_idx = {
+                # split 名不再写死,加了 test 之后也不用再改这里
+                k: {split: [str(p) for p in paths] for split, paths in v.items()}
+                for k, v in fold_dataset_idx.items()
+            }
 
             os.makedirs(target_path, exist_ok=True)
-            
+
             with open(target_path / "index.json", "w") as f:
                 json.dump(json_fold_dataset_idx, f, sort_keys=True, indent=4)
 
@@ -234,9 +247,18 @@ class DefineCrossValidation(object):
             # Convert string paths back to Path objects
             for k, v in fold_dataset_idx.items():
                 fold_dataset_idx[k] = {
-                    'train': [Path(i) for i in v['train']],
-                    'val': [Path(i) for i in v['val']],
+                    split: [Path(p) for p in paths] for split, paths in v.items()
                 }
+
+            # 缓存一旦存在就直接加载,不会重新划分 —— 旧缓存只有 train/val,
+            # 拿它跑新代码会静默退回 "val 即 test" 的有偏评估。这里必须拦住。
+            missing = [k for k, v in fold_dataset_idx.items() if "test" not in v]
+            if missing:
+                raise ValueError(
+                    f"{target_path / 'index.json'} 是旧格式(缺 test 划分,折 {missing[:3]}...)。"
+                    "现在每折需要 train/val/test 三份。请先跑 pegasus/prepare_index.sh 重建"
+                    "(旧缓存会被备份,不会删)。"
+                )
 
         else:
             raise ValueError(

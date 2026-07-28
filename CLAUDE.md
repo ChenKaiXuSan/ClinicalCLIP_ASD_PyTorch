@@ -39,14 +39,14 @@ analysis/run_tsne.sh
 
 **缓存陷阱**:`index.json` 存的是生成时环境的绝对路径。`cross_validation.py` 只要发现 `index_mapping/<class_num>/` 存在就直接加载,**`train.fold` 改了也不会重新划分**,换机器必须先 sed 替换前缀或删缓存重建。用 `pegasus/prepare_index.sh` 处理(旧缓存备份到 `3.bak.<折数>fold/`,不删)。全库只保留 5 折划分,超算上原先那份 10 折缓存已删除。
 
-划分本身是确定的:同样的 `train.fold=5` 在本机和超算上重建出的每折规模完全一致(1480/410、1510/380、1479/411、1506/384、1510/380),所以跨机器的实验仍可比。
+划分本身是确定的(两层 `StratifiedGroupKFold` 都不 shuffle),换机器重建结果一致,跨机器实验可比。5 折的 train/val/test 规模:1132/367/391、1132/391/367、1127/367/396、1154/367/369、1154/369/367。
 
 ## 架构
 
 流程图见 `docs/clinicalclip_pipeline.drawio`。核心链路:
 
-1. **入口** `project/main.py`:Hydra 加载配置 → `DefineCrossValidation()` 返回 `{fold: {train: [json路径], val: [json路径]}}` → 逐折调用 `train()`,每折独立 fit + test。
-2. **交叉验证** `project/cross_validation.py`:`StratifiedGroupKFold(K=5)` 按患者名分组防泄漏;过滤含 "HipOA" 的患者名(FIXME 数据不均衡);`magic_move` 在 train/val 间交换非 ASD 患者;结果缓存到 `index_mapping/`。
+1. **入口** `project/main.py`:Hydra 加载配置 → `DefineCrossValidation()` 返回 `{fold: {train/val/test: [json路径]}}` → 逐折调用 `train()`,每折独立 fit + test。
+2. **交叉验证** `project/cross_validation.py`:嵌套 `StratifiedGroupKFold` 按患者名分组产出 train/val/test 三份(见「实验统一设定」);过滤含 "HipOA" 的患者名(FIXME 数据不均衡);结果缓存到 `index_mapping/`。旧缓存只有 train/val,加载时会直接报错要求重建。
 3. **数据** `project/dataloader/`:采样计划先行——`_plan_frame_index` 先按"每秒一段、每段均匀取 8 帧"算出最终保留的全局帧下标,再只解码这些帧(`_decode_selected` 跳过无用帧的 rgb24 转换)、只为这些帧生成注意力图(`MedAttnMap.build` 用可分离高斯做批量矩阵乘,直接在 224 上生成)。视频路径按 `json_mix/` → `video/` 前缀重映射,不用 json 里写死的旧绝对路径。`collate_fn` 把一条视频的所有段沿 batch 维拼接,所以 `batch_size=1` 时实际 batch 是段数。
    - 改这部分时注意保持采样语义:`_plan_frame_index` 必须与 `UniformTemporalSubsample` 的 `round(linspace(0, L-1, n))` 一致,段长不足时靠重复帧补齐。
    - `whole_video_dataset.LEGACY_ATTN_DIV255`:旧实现让 video 和 attn 共用同一个 Compose,其中 `Div255` 也除在了本就 [0,1] 的高斯图上。模型里 `downsample_attn_to_tokens` 会做 min-max 归一化基本抵消掉,但 `ChannelMapGuidedVideoEncoder` 直接把原始均值喂进 MLP,尺度有影响。目前保持与既有实验一致,重设计实验时可考虑改成 False。
@@ -96,14 +96,19 @@ GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 1
   `prepare_torchhub.sh`(预训练权重),再 `qsub pegasus/smoke_test.sh` 自检链路。
   计算节点有外网,走预设的 HTTP 代理(`http_proxy=http://10.120.96.1:8080`),DNS 直连不通。
 
-⚠ `magic_move` 造成患者级泄漏:5/5 折、46.8% 的验证样本来自训练见过的患者,
-且只发生在 DHS 与 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称抬高。
-未修复,论文用数前必须处理。
+每折产出 train/val/test 三份(约 60/20/20),三者按患者分组互不相交:外层
+`StratifiedGroupKFold(5)` 留出 test,内层 `StratifiedGroupKFold(4)` 把开发集切成
+train/val。**val 只用来选 checkpoint,test 只用来报指标。**
+
+这是 2026-07 的修复。此前 `magic_move` 给每个非 ASD 患者在 train/val 之间对搬一个
+片段,造成 46.8% 的验证样本来自训练见过的患者(只发生在 DHS 与 LCS_HipOA 两类),
+且 val 与 test 是同一批数据 —— 所有 `test/*` 都是"在测试集上挑最好的 epoch 再报
+测试集成绩"。这两条修复之前产出的所有数字都不可用。
 
 ## 已知坑与过时文档
 
 - **README 的用法章节是 954577e 重构前的旧内容,勿照搬**:`train.backbone`(实际是 `model.backbone`)、`gait_video_dataset.py`、`TemporalMix`、`scripts/eval.py`、"必须用 `python -m project.main`" 等均已失效或与现状相反。同样过时的 `.github/copilot-instructions.md` 已删除。
 - 训练**不使用** early stopping(按需求移除),每折固定跑满 `train.max_epochs`。
-- `train.attn_map=False` 分支不可用:引用不存在的 `dataset_idx['test']` 键,且 `collate_fn` 依赖 `attn_map` 键;保持默认 `True`。
+- `train.attn_map=False` 分支不可用:`collate_fn` 依赖 `attn_map` 键;保持默认 `True`。
 - `config.yaml` 的 `model.model: "resnet"` 是残留配置,选择逻辑只看 `model.backbone`。
 - `logs/` 约 40 GB,其中 54 个 `.ckpt` 占几乎全部;指标/CSV/TensorBoard/embeddings 仅 64 MB。

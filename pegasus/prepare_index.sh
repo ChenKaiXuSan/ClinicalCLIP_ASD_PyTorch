@@ -28,14 +28,19 @@ source pegasus/setup_env.sh
 INDEX_DIR="${DATA_ROOT}/clinical_CLIP_dataset/index_mapping/${CLASS_NUM}"
 
 current_folds=0
+has_test=0
 if [[ -f "${INDEX_DIR}/index.json" ]]; then
     current_folds=$(python -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "${INDEX_DIR}/index.json")
+    python -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+sys.exit(0 if d and all('test' in v for v in d.values()) else 1)" "${INDEX_DIR}/index.json" && has_test=1
 fi
 
-echo "现有划分: ${INDEX_DIR} -> ${current_folds} 折 (期望 ${FOLD} 折)"
+echo "现有划分: ${INDEX_DIR} -> ${current_folds} 折 (期望 ${FOLD} 折), 三分格式: ${has_test}"
 
-if [[ "${current_folds}" == "${FOLD}" ]]; then
-    echo "折数已经对上,无需重建。"
+if [[ "${current_folds}" == "${FOLD}" && "${has_test}" == "1" ]]; then
+    echo "折数与格式都已对上,无需重建。"
 elif [[ "${DRYRUN}" == "1" ]]; then
     echo "DRYRUN: 会把 ${INDEX_DIR} 备份到 ${INDEX_DIR}.bak.${current_folds}fold 并按 ${FOLD} 折重建"
     exit 0
@@ -76,16 +81,32 @@ print(f"已重建: {config.paths.index_mapping}")
 PY
 fi
 
-# 汇报每折规模,和 docs/experiment_matrix.md 的表对照
+# 汇报每折规模与患者级泄漏,和 docs/experiment_matrix.md 的表对照
 python - "${INDEX_DIR}/index.json" <<'PY'
 import collections
 import json
 import sys
 from pathlib import Path
 
+
+def patients(paths):
+    return {Path(p).name.split("-")[0] for p in paths}
+
+
 split = json.load(open(sys.argv[1]))
+leaks = 0
 for k in sorted(split, key=int):
-    tr, va = split[k]["train"], split[k]["val"]
-    by_class = collections.Counter(Path(p).parent.name for p in va)
-    print(f"fold {k}: train {len(tr):5d}  val {len(va):4d}   val 分布 {dict(by_class)}")
+    tr, va, te = split[k]["train"], split[k]["val"], split[k]["test"]
+    by_class = collections.Counter(Path(p).parent.name for p in te)
+    print(
+        f"fold {k}: train {len(tr):5d}  val {len(va):4d}  test {len(te):4d}"
+        f"   test 分布 {dict(by_class)}"
+    )
+    ptr, pva, pte = patients(tr), patients(va), patients(te)
+    for a, b, name in ((ptr, pva, "train/val"), (ptr, pte, "train/test"), (pva, pte, "val/test")):
+        if a & b:
+            leaks += 1
+            print(f"    !! {name} 患者重叠 {len(a & b)} 人")
+
+print("患者级泄漏:", "无" if leaks == 0 else f"{leaks} 处 —— 必须处理后再用")
 PY

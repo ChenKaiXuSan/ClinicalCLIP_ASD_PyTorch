@@ -123,8 +123,11 @@ class WalkDataModule(LightningDataModule):
                 dataset_idx=self._dataset_idx['val'], **common
             )
 
+            # test 是独立的第三份划分(按患者与 train/val 互不相交)。之前这里用的是
+            # ['val'],于是 checkpoint 按 val 选完再在同一批数据上测,所有 test/* 都是
+            # 模型选择后的有偏估计。
             self.test_gait_dataset = whole_video_dataset(
-                dataset_idx=self._dataset_idx['val'], **common
+                dataset_idx=self._dataset_idx['test'], **common
             )
 
         else:

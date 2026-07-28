@@ -14,15 +14,7 @@
 **5 折交叉验证、每个实验 100 epochs、不使用 early stopping。** 配置里 `train.fold: 5`、
 `train.max_epochs: 100`,`run_matrix.sh` 的默认值同步为 `FOLDS=0-4 EPOCHS=100`。
 
-5 折划分(按患者分组,`index_mapping/3/index.json`):
-
-| fold | train | val |
-|---|---|---|
-| 0 | 1480 | 410 |
-| 1 | 1510 | 380 |
-| 2 | 1479 | 411 |
-| 3 | 1506 | 384 |
-| 4 | 1510 | 380 |
+每折 train/val/test 三份、按患者分组互不相交,规模见文末「划分协议」。
 
 ## 单次耗时(实测)
 
@@ -110,9 +102,8 @@ qsub  pegasus/smoke_test.sh        # 一个节点上把 14 个配置各跑一个
 ```
 
 `prepare_index.sh` 不是可选步骤。`cross_validation.py` 只要发现 `index_mapping/3/` 存在就直接加载,
-`train.fold` 改了也不会重新划分 —— 缓存是几折,训的就是几折。Pegasus 上原先那份 10 折缓存
-(train 1711 / val 179)已经换成 5 折并删除,现在数据目录里只有 5 折这一份。
-`submit_matrix.sh` 提交前会校验折数,对不上直接拒绝提交。
+`train.fold` 改了也不会重新划分 —— 缓存是几折,训的就是几折。`submit_matrix.sh` 提交前会同时校验
+折数和「每折是否有独立 test」,对不上直接拒绝提交;旧格式缓存在加载时也会直接报错。
 
 ### 提交
 
@@ -146,9 +137,27 @@ qsub pegasus/run_attn_alignment.sh   # 需要 B0_3dcnn 至少训完一折(脚本
 - `region_f1_any` / `region_f1_both` 是两种口径,另有免阈值的 `region_ap`。
 - 汇总用 `analysis/compare_concept_runs.py`,它会从 `best_preds/*.pt` 补算 macro / micro / 逐类召回和两种基线。
 
-## 两个尚未解决的方法学问题
+## 划分协议(2026-07 修订)
 
-这两个不解决,上面所有数字都不能写进论文:
+每折 train/val/test 三份,按患者分组互不相交(实测 0 泄漏):
 
-1. **患者级数据泄漏**:`cross_validation.magic_move` 给每个非 ASD 患者挑一个片段跨 train/val 搬运,在当前 5 折划分下导致 **5/5 折、46.8% 的验证样本来自训练见过的患者**(逐折 44.7%–49.1%),且泄漏只发生在 DHS 和 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称地抬高。
-2. **val 与 test 是同一批数据**:`cross_validation` 只产出 train/val 两个键,checkpoint 按 `val/video_acc` 选、再在同一批数据上测,所有 `test/*` 都是模型选择后的有偏估计。
+| fold | train | val | test | test 类别分布 |
+|---|---|---|---|---|
+| 0 | 1132 | 367 | 391 | ASD 209 / DHS 115 / LCS 67 |
+| 1 | 1132 | 391 | 367 | ASD 210 / DHS 118 / LCS 39 |
+| 2 | 1127 | 367 | 396 | ASD 209 / DHS 115 / LCS 72 |
+| 3 | 1154 | 367 | 369 | ASD 209 / DHS 116 / LCS 44 |
+| 4 | 1154 | 369 | 367 | ASD 208 / DHS 121 / LCS 38 |
+
+外层 `StratifiedGroupKFold(5)` 留出 test,内层 `StratifiedGroupKFold(4)` 把开发集切成
+train/val。**val 只用来选 checkpoint,test 只用来报指标。**
+
+修的是两个此前会让所有数字作废的问题:
+
+1. **患者级泄漏**:`magic_move` 给每个非 ASD 患者在 train/val 之间对搬一个片段,导致
+   5/5 折、46.8% 的验证样本来自训练见过的患者,且只发生在 DHS 与 LCS_HipOA 两类
+   (ASD 被显式跳过),macro 被不对称地抬高。已移除。
+2. **val 与 test 同批**:`data_loader` 的 test dataset 直接用 `dataset_idx['val']`,
+   于是 checkpoint 按 val 选完再在同一批数据上测。现在是独立的第三份划分。
+
+⚠ 这两条修复之前产出的所有结果都不可用,包括 2026-07-27 那轮 fold0。
