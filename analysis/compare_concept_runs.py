@@ -44,8 +44,25 @@ def posthoc_metrics(exp_dir: Path) -> dict | None:
     """
     import torch
 
+    # 一个 experiment 目录下每跑一次就多一个 <日期>/<时刻>/ 子目录。全部 rglob 会把
+    # 历次运行的预测拼在一起,重跑之后得到的是新旧结果的混合 —— B0_3dcnn 修 stem 之后
+    # 就这么静默混过一次(n=7568 而不是 3784,数字落在修复前后之间)。
+    # 只认最新那一次运行,每折各取一份。
+    run_dirs = sorted(
+        {p.parent.parent for p in exp_dir.rglob("best_preds/*_pred.pt")},
+        key=lambda p: p.stat().st_mtime,
+    )
+    if not run_dirs:
+        return None
+    latest = run_dirs[-1]
+    if len(run_dirs) > 1:
+        print(
+            f"  [注意] {exp_dir.name} 有 {len(run_dirs)} 次运行,只用最新的 "
+            f"{latest.relative_to(exp_dir)}"
+        )
+
     preds, labels = [], []
-    for pred_file in sorted(exp_dir.rglob("best_preds/*_pred.pt")):
+    for pred_file in sorted((latest / "best_preds").glob("*_pred.pt")):
         label_file = pred_file.with_name(pred_file.name.replace("_pred.pt", "_label.pt"))
         if not label_file.exists():
             continue
