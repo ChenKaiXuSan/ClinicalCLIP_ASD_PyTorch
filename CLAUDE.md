@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-ClinicalCLIP:用 CLIP 式对比学习将步态视频与医生标注注意力图对齐,进行临床疾病三分类(ASD / DHS / LCS_HipOA)。技术栈:PyTorch Lightning + Hydra + pytorchvideo。
+ClinicalCLIP:把医生标注的关注区域作为临床先验引入步态视频分类,任务是 **ASD vs non-ASD 二分类**(DHS 与 LCS_HipOA 合并为 non-ASD)。技术栈:PyTorch Lightning + Hydra + pytorchvideo。
+
+原本是 ASD / DHS / LCS_HipOA 三分类,已放弃:LCS_HipOA 全库只有 9 个患者,按患者分组切分后每折 test 里只剩 1-2 个,14 个配置对该类的召回全是 0.00-0.06,macro 全部掉到多数类基线以下。证据见 `docs/why_binary.md`。
 
 ## 常用命令
 
@@ -71,7 +73,9 @@ concept 架构的四项损失见 `models/clinical_concept.py`:分类 CE、区域
 
 ## 指标口径(容易误读)
 
-`video_acc` / `video_f1_score` 走的是 torchmetrics 默认的 `average="macro"`,即**平衡准确率**(各类召回的均值)。多数类预测器只得 `1/C`(三分类为 0.333),**不是**类别占比。以 fold0 为例,val 集是 ASD 105 / DHS 57 / LCS_HipOA 17,micro 口径的多数类基线是 0.587,macro 口径是 0.333 —— 两个数差很多,论文里必须写明是哪一种,直接写 "accuracy" 会被质疑。
+`video_acc` / `video_f1_score` 走的是 torchmetrics 默认的 `average="macro"`,即**平衡准确率**(各类召回的均值)。多数类预测器只得 `1/C`,二分类是 **0.5**,**不是**类别占比。以 fold0 的 test 为例,段级 micro 口径的多数类基线是 0.640,macro 口径是 0.500 —— 两个数差很多,论文里必须写明是哪一种,直接写 "accuracy" 会被质疑。
+
+还有一条更要命的:指标算在**段**上(每折 test 约 2800 段),但有效样本量是**患者**(每折 test 17 人,其中 non-ASD 只有 6 人)。写 n=2800 会严重高估置信度,一个患者判错 macro 就动 8 个百分点。
 
 `analysis/compare_concept_runs.py` 会从 `save_helper` 存下的 `best_preds/*_pred.pt` 补算 macro / micro / 逐类召回和两种基线。补算而不是在训练里多记指标,是为了让先后批次跑的实验口径完全一致。
 
@@ -101,9 +105,9 @@ GPU 实测利用率 86–94%,属算力受限而非数据受限(32 核负载仅 1
 train/val。**val 只用来选 checkpoint,test 只用来报指标。**
 
 这是 2026-07 的修复。此前 `magic_move` 给每个非 ASD 患者在 train/val 之间对搬一个
-片段,造成 46.8% 的验证样本来自训练见过的患者(只发生在 DHS 与 LCS_HipOA 两类),
-且 val 与 test 是同一批数据 —— 所有 `test/*` 都是"在测试集上挑最好的 epoch 再报
-测试集成绩"。这两条修复之前产出的所有数字都不可用。
+片段,造成 46.8% 的验证样本来自训练见过的患者,且 val 与 test 是同一批数据 ——
+所有 `test/*` 都是"在测试集上挑最好的 epoch 再报测试集成绩"。这两条修复之前产出的
+所有数字都不可用,相关日志已删除。
 
 ## 已知坑与过时文档
 

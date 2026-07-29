@@ -44,7 +44,7 @@ model:
   backbone: "clip"
   model: "resnet" # 仅 3dcnn/2dcnn/cnn_lstm 基线经 make_model 使用
   model_depth: 50 # 基线 backbone 深度 (make_model 需要)
-  model_class_num: 3 # number of classes: 2 (ASD vs non-ASD), 3 (ASD, DHS, LCS_HipOA), etc.
+  model_class_num: 2 # ASD vs non-ASD。三分类已放弃,原因见 docs/why_binary.md
   clip_backbone_depth: 50 # ResNet depth for 3D CNN
   clip_backbone_pretrained: true
   attn_backbone_pretrained: false

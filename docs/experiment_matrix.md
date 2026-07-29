@@ -1,5 +1,8 @@
 # 实验矩阵
 
+任务是 **ASD vs non-ASD 二分类**(`model.model_class_num: 2`)。三分类已放弃,
+原因与证据见 [`why_binary.md`](why_binary.md)。
+
 配置在 `pegasus/matrix.tsv`(唯一的真源,本机和超算共用)。执行有两条路:
 
 | 环境 | 脚本 | 并行方式 |
@@ -95,13 +98,13 @@ bf16 实测 GPU 计算快 **1.56 倍**、显存 7.6→4.9 GB。由于 GPU 利用
 ### 一次性准备
 
 ```bash
-bash pegasus/prepare_index.sh      # 交叉验证划分对齐到 5 折(旧缓存自动备份)
+bash pegasus/prepare_index.sh      # 建 5 折三分划分(旧缓存自动备份, 建完自查患者泄漏)
 bash pegasus/prepare_concepts.sh   # M1 需要的 CLIP 文本概念向量(要装 transformers)
 bash pegasus/prepare_torchhub.sh   # slow_r50 与 resnet50 预训练权重灌进 torch hub 缓存
 qsub  pegasus/smoke_test.sh        # 一个节点上把 14 个配置各跑一个 batch,10 分钟暴露配置问题
 ```
 
-`prepare_index.sh` 不是可选步骤。`cross_validation.py` 只要发现 `index_mapping/3/` 存在就直接加载,
+`prepare_index.sh` 不是可选步骤。`cross_validation.py` 只要发现 `index_mapping/<类别数>/` 存在就直接加载,
 `train.fold` 改了也不会重新划分 —— 缓存是几折,训的就是几折。`submit_matrix.sh` 提交前会同时校验
 折数和「每折是否有独立 test」,对不上直接拒绝提交;旧格式缓存在加载时也会直接报错。
 
@@ -120,7 +123,7 @@ DRYRUN=1 GROUP=all bash pegasus/submit_matrix.sh   # 只看清单不提交
 **断点续跑**:每个任务成功后在 `logs/pegasus/matrix/done/<tag>.done` 落一个标记。
 把同一条提交命令再敲一遍,已完成的会被剔除,只有失败/没跑到的重新排队;要强制全部重跑加 `FORCE=1`。
 
-单个任务的实时日志在 `logs/pegasus/matrix/<tag>.log`(tag 形如 `M0_concept_learned__f2_s42`)。
+单个任务的实时日志在 `logs/pegasus/matrix/<tag>.log`(tag 形如 `M0_concept_learned_c2__f2_s42`)。
 
 ### 可解释性对照
 
@@ -132,7 +135,8 @@ qsub pegasus/run_attn_alignment.sh   # 需要 B0_3dcnn 至少训完一折(脚本
 
 ## 读结果时必须注意
 
-- `video_acc` / `video_f1_score` 是 **macro 平均(平衡准确率)**,多数类基线是 `1/C = 0.333`,不是类别占比 0.587。论文里写 "accuracy" 会被质疑。
+- `video_acc` / `video_f1_score` 是 **macro 平均(平衡准确率)**,二分类的多数类基线是 **0.5**,段级 micro 基线是 0.640。论文里写 "accuracy" 会被质疑。
+- 指标算在**段**上,但有效样本量是**患者**(每折 test 17 人、non-ASD 仅 6 人)。必须报告患者数。
 - `test/attn_align` 要和同时输出的 `test/attn_align_uniform` 一起看,两者之差(`attn_align_gain`)才是真正学到的对齐。
 - `region_f1_any` / `region_f1_both` 是两种口径,另有免阈值的 `region_ap`。
 - 汇总用 `analysis/compare_concept_runs.py`,它会从 `best_preds/*.pt` 补算 macro / micro / 逐类召回和两种基线。
@@ -141,13 +145,16 @@ qsub pegasus/run_attn_alignment.sh   # 需要 B0_3dcnn 至少训完一折(脚本
 
 每折 train/val/test 三份,按患者分组互不相交(实测 0 泄漏):
 
-| fold | train | val | test | test 类别分布 |
-|---|---|---|---|---|
-| 0 | 1132 | 367 | 391 | ASD 209 / DHS 115 / LCS 67 |
-| 1 | 1132 | 391 | 367 | ASD 210 / DHS 118 / LCS 39 |
-| 2 | 1127 | 367 | 396 | ASD 209 / DHS 115 / LCS 72 |
-| 3 | 1154 | 367 | 369 | ASD 209 / DHS 116 / LCS 44 |
-| 4 | 1154 | 369 | 367 | ASD 208 / DHS 121 / LCS 38 |
+| fold | train | val | test | test 段数 ASD / non-ASD | test 患者数 |
+|---|---|---|---|---|---|
+| 0 | 1132 | 379 | 379 | 209 / 170 | 11 / 6 |
+| 1 | 1133 | 379 | 378 | 208 / 170 | 10 / 5 |
+| 2 | 1134 | 379 | 377 | 209 / 168 | 11 / 6 |
+| 3 | 1134 | 379 | 377 | 209 / 168 | 11 / 6 |
+| 4 | 1132 | 379 | 379 | 210 / 169 | 11 / 6 |
+
+**non-ASD 侧每折 test 只有 5–6 个患者** —— 一个患者判错,macro 就动 8 个百分点。
+任何单折结论都不足以支撑判断,必须看 5 折方差。
 
 外层 `StratifiedGroupKFold(5)` 留出 test,内层 `StratifiedGroupKFold(4)` 把开发集切成
 train/val。**val 只用来选 checkpoint,test 只用来报指标。**
@@ -155,9 +162,9 @@ train/val。**val 只用来选 checkpoint,test 只用来报指标。**
 修的是两个此前会让所有数字作废的问题:
 
 1. **患者级泄漏**:`magic_move` 给每个非 ASD 患者在 train/val 之间对搬一个片段,导致
-   5/5 折、46.8% 的验证样本来自训练见过的患者,且只发生在 DHS 与 LCS_HipOA 两类
-   (ASD 被显式跳过),macro 被不对称地抬高。已移除。
+   5/5 折、46.8% 的验证样本来自训练见过的患者,且只发生在患者最少的两类,macro 被
+   不对称地抬高。已移除。
 2. **val 与 test 同批**:`data_loader` 的 test dataset 直接用 `dataset_idx['val']`,
    于是 checkpoint 按 val 选完再在同一批数据上测。现在是独立的第三份划分。
 
-⚠ 这两条修复之前产出的所有结果都不可用,包括 2026-07-27 那轮 fold0。
+⚠ 这两条修复之前产出的所有结果都不可用,相关日志已删除。

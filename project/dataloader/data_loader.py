@@ -24,10 +24,9 @@ from .med_attn_map import MedAttnMap
 from .utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
 
 
+# DHS / LCS_HipOA 都归到 non-ASD。三分类已放弃,原因见 docs/why_binary.md。
 DISEASE_TO_NUM_MAPPING: Dict = {
     2: {"ASD": 0, "non-ASD": 1},
-    3: {"ASD": 0, "DHS": 1, "LCS_HipOA": 2},
-    4: {"ASD": 0, "DHS": 1, "LCS_HipOA": 2, "normal": 3},
 }
 
 

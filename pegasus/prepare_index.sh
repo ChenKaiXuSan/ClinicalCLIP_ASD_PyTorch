@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="${CLINICALCLIP_REPO_ROOT:-/work/SKIING/chenkaixu/code/ClinicalCLIP_ASD_PyTorch}"
 DATA_ROOT="${CLINICALCLIP_DATA_ROOT:-/work/SKIING/chenkaixu/data/asd_dataset}"
 FOLD="${FOLD:-5}"
-CLASS_NUM="${CLASS_NUM:-3}"
+CLASS_NUM="${CLASS_NUM:-2}"
 DRYRUN="${DRYRUN:-0}"
 
 cd "${REPO_ROOT}"

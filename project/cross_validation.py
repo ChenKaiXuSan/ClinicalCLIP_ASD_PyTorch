@@ -23,29 +23,30 @@ Date      	By	Comments
 """
 
 
-import os, json, shutil, copy, random
+import json
+import os
 from typing import Any, Dict, List, Tuple
 
-from sklearn.model_selection import StratifiedGroupKFold, train_test_split, GroupKFold
+from sklearn.model_selection import StratifiedGroupKFold
 from pathlib import Path
 
+# 任务是 ASD vs non-ASD 二分类。三分类(ASD/DHS/LCS_HipOA)已放弃 ——
+# LCS_HipOA 全库只有 9 个患者,按患者分组切分后每折 test 里只剩 1-2 个,
+# 所有模型对该类的召回都是 0,macro 全部掉到多数类基线以下。
+# 证据见 docs/why_binary.md。
 class_num_mapping_Dict: Dict = {
     2: {0: "ASD", 1: "non-ASD"},
-    3: {0: "ASD", 1: "DHS", 2: "LCS_HipOA"},
-    4: {0: "ASD", 1: "DHS", 2: "LCS_HipOA", 3: "normal"},
 }
 
 
 class DefineCrossValidation(object):
     """Process cross validation for gait analysis dataset.
     
-    Workflow:
-        1. Cross validation split using StratifiedGroupKFold
-        2. Train/Val split for each fold
-        3. Save index mapping (no video file copying)
-    
+    嵌套 StratifiedGroupKFold,每折产出按患者互不相交的 train/val/test 三份,
+    结果缓存到 index_mapping/<class_num>/index.json。
+
     Returns:
-        fold: {'train': [path], 'val': [path]}
+        fold: {'train': [path], 'val': [path], 'test': [path]}
     """
 
     def __init__(self, config) -> None:
@@ -104,46 +105,10 @@ class DefineCrossValidation(object):
 
         return X, y, groups
 
-    # NOTE: magic_move 已移除(2026-07)。它给每个非 ASD 患者在 train/val 之间对搬一个
-    # 片段,直接制造患者级泄漏:5/5 折、46.8% 的验证样本来自训练见过的患者,而且只发生
-    # 在 DHS 与 LCS_HipOA 两类(ASD 被显式跳过),macro 指标被不对称地抬高。
-    # 它原本大概是为了让每折的 val 都凑齐三类;现在改用 train/val/test 三分,
-    # 内外两层都按患者分组,不需要再搬样本。旧实现见 git 历史。
-    @staticmethod
-    def _unused_magic_move(train_mapped_path, val_mapped_path):
-
-        new_train_mapped_path = copy.deepcopy(train_mapped_path)
-        new_val_mapped_path = copy.deepcopy(val_mapped_path)
-
-        # train magic
-        train_tmp_dict = {}
-        for i in train_mapped_path:
-            # not move ASD
-            if "ASD" in i.name:
-                continue
-
-            train_tmp_dict[i.name.split("-")[0]] = i
-
-        val_tmp_dict = {}
-        for i in val_mapped_path:
-            # not move ASD
-            if "ASD" in i.name:
-                continue
-            val_tmp_dict[i.name.split("-")[0]] = i
-
-        for k, v in train_tmp_dict.items():
-            new_val_mapped_path.append(v)
-
-            rm_idx = new_train_mapped_path.index(v)
-            new_train_mapped_path.pop(rm_idx)
-
-        for k, v in val_tmp_dict.items():
-            new_train_mapped_path.append(v)
-
-            rm_idx = new_val_mapped_path.index(v)
-            new_val_mapped_path.pop(rm_idx)
-
-        return new_train_mapped_path, new_val_mapped_path
+    # NOTE: magic_move 已于 2026-07 移除(实现见 git 历史)。它给每个非 ASD 患者在
+    # train/val 之间对搬一个片段,直接制造患者级泄漏:5/5 折、46.8% 的验证样本来自
+    # 训练见过的患者,且只发生在患者最少的两类,macro 被不对称地抬高。
+    # 现在改用 train/val/test 三分,内外两层都按患者分组,不需要再搬样本。
 
     @staticmethod
     def map_class_num(class_num: int, raw_video_path: Path) -> Dict:
@@ -194,7 +159,7 @@ class DefineCrossValidation(object):
 
         # Process dataset: extract paths, labels, and patient groups
         # X: video path in Path format (e.g., len=1954)
-        # y: label list (0, 1, 2, ...) defined by class_num_mapping_Dict
+        # y: label list (0 = ASD, 1 = non-ASD)
         # groups: unique patient indices (e.g., 54 patients)
         X, y, groups = self.process_cross_validation(mapped_class_Dict)
 

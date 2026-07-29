@@ -32,11 +32,11 @@ NUM_WORKERS="${NUM_WORKERS:-12}"
 # 哪怕整个集群空着。窗口紧张时按实测值再压:ELAPS=05:00:00 ...
 ELAPS="${ELAPS:-06:00:00}"
 EXPECT_FOLD="${EXPECT_FOLD:-5}"        # index_mapping 缓存必须是这个折数
-CLASS_NUM="${CLASS_NUM:-3}"            # 划分缓存按类别数分目录存放
-# 追加给每个任务的 Hydra 覆盖,以及加在实验名后的后缀。改任务定义时用,例如二分类:
-#   EXTRA="model.model_class_num=2" TAG_SUFFIX=_c2 GROUP=all FOLDS=0 bash pegasus/submit_matrix.sh
-# 后缀是必需的 —— 不加的话两种任务的结果会写进同一个 logs/train/<实验名>/ 目录,
-# 汇总脚本按目录取最新一次,新旧任务会互相覆盖。
+CLASS_NUM="${CLASS_NUM:-2}"            # 划分缓存按类别数分目录存放;任务是 ASD vs non-ASD
+# 追加给每个任务的 Hydra 覆盖,以及加在实验名后的后缀。换任务定义时成对使用 ——
+# 后缀不加的话,新旧任务的结果会写进同一个 logs/train/<实验名>/ 目录,汇总脚本
+# 按目录取最新一次,于是互相覆盖。例如换回三分类(需先补数据,见 docs/why_binary.md):
+#   EXTRA="model.model_class_num=3" TAG_SUFFIX=_c3 CLASS_NUM=3 bash pegasus/submit_matrix.sh
 EXTRA="${EXTRA:-}"
 TAG_SUFFIX="${TAG_SUFFIX:-}"
 CHUNK="${CHUNK:-150}"        # 队列上限:一个批处理请求最多 150 个 sub-request
