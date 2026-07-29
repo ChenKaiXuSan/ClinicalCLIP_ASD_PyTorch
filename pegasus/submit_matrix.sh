@@ -185,6 +185,10 @@ PRECISION=${PRECISION}
 NUM_WORKERS=${NUM_WORKERS}
 OUT_DIR=${OUT_DIR}
 EXTRA="${EXTRA}"
+# FORCE 必须传下去。matrix_job.sh 自己也查 done 标记,只在提交侧过滤的话,
+# FORCE=1 只是把任务放进了清单,作业跑起来照样被 done 标记挡掉直接 exit 0 ——
+# 上一轮 fold0 的 14 个任务就是这么"完成"的:清单里有、节点上没跑。
+FORCE=${FORCE}
 ENV
 
     n=$(wc -l < "${prefix}.tsv")

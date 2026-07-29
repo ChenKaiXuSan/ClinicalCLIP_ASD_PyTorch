@@ -33,6 +33,30 @@ METRIC_KEYS = [
 ]
 
 
+_PATIENT_MAP: dict[str, str] | None = None
+
+
+def build_patient_map(root_path: str) -> dict[str, str]:
+    """video_name -> 患者键。
+
+    数据里有两套命名:JSON **文件名**是 `<患者>-0001.json`,而 JSON **内容**里的
+    video_name 有时是 `<患者>-0001`、有时是 `<患者>__ (1)`(下划线数量还不固定)。
+    交叉验证按文件名分组,预测里存的却是 video_name,靠正则对不齐 ——
+    实测 fold2 会把 `20171016_ASD_lat__ (1)` 归到 `20171016_ASD_lat_`,
+    和 index.json 的 `20171016_ASD_lat` 差一个下划线,于是一个患者被拆成多个。
+
+    所以直接读一遍 json_mix 建精确映射,不做任何字符串猜测。
+    """
+    mapping: dict[str, str] = {}
+    for jf in Path(root_path, "clinical_CLIP_dataset", "json_mix").rglob("*.json"):
+        try:
+            video_name = json.loads(jf.read_text())["video_name"]
+        except (ValueError, KeyError, OSError):
+            continue
+        mapping[video_name] = jf.stem.split("-")[0]
+    return mapping
+
+
 def posthoc_metrics(exp_dir: Path) -> dict | None:
     """从 save_helper 存下的原始预测补算各口径指标。
 
@@ -96,8 +120,15 @@ def posthoc_metrics(exp_dir: Path) -> dict | None:
     patient = None
     if names and len(names) == label.numel():
         by_patient: dict[str, list[int]] = defaultdict(list)
+        unknown = 0
         for idx, vid in enumerate(names):
-            by_patient[vid.split("-")[0]].append(idx)
+            key = (_PATIENT_MAP or {}).get(vid)
+            if key is None:
+                unknown += 1
+                key = vid  # 兜底:当成独立患者,并在下面报出来
+            by_patient[key].append(idx)
+        if unknown:
+            print(f"  [注意] {exp_dir.name}: {unknown} 段的 video_name 不在映射表里")
 
         p_pred, p_label = [], []
         for _, idxs in sorted(by_patient.items()):
@@ -153,7 +184,18 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="logs/train")
     parser.add_argument("--json", default=None, help="额外导出为 json")
+    parser.add_argument(
+        "--root-path", default="/work/SKIING/chenkaixu/data/asd_dataset",
+        help="数据根目录,用来建 video_name -> 患者 的精确映射",
+    )
     args = parser.parse_args()
+
+    global _PATIENT_MAP
+    if Path(args.root_path).exists():
+        _PATIENT_MAP = build_patient_map(args.root_path)
+        print(f"患者映射: {len(_PATIENT_MAP)} 条 (来自 {args.root_path})")
+    else:
+        print(f"[警告] 找不到 {args.root_path},患者级指标将不可用")
 
     root = Path(args.root)
     if not root.exists():
