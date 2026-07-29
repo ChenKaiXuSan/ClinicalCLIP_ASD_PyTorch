@@ -27,6 +27,19 @@ from utils.metrics import ClassificationMetrics
 logger = logging.getLogger(__name__)
 
 
+
+def _expand_video_names(batch) -> list:
+    """把 batch 里每条视频的名字按其 gait 段数展开,与逐段预测一一对应。
+
+    collate_fn 把一条视频的所有段沿 batch 维拼接,所以段级预测的归属只能从
+    info 里的 num_chunks 还原。存下来是为了能算患者级指标 —— 有效样本量是
+    患者(每折 test 17 人),不是段(约 2800)。
+    """
+    names = []
+    for item in batch.get("info", []):
+        names.extend([item["video_name"]] * int(item["num_chunks"]))
+    return names
+
 class CLIPAlignModule(LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -133,6 +146,7 @@ class CLIPAlignModule(LightningModule):
     def on_test_start(self) -> None:
         """hook function for test start"""
 
+        self.test_video_names: list = []
         self.test_pred_list: list[torch.Tensor] = []
         self.test_label_list: list[torch.Tensor] = []
         self.test_video_embed_list: list[torch.Tensor] = []
@@ -161,6 +175,7 @@ class CLIPAlignModule(LightningModule):
 
         self.metrics.log(self, "test", probs, label, batch_size=label.size(0))
 
+        self.test_video_names.extend(_expand_video_names(batch))
         self.test_pred_list.append(probs.detach().cpu())
         self.test_label_list.append(label.detach().cpu())
         self.test_video_embed_list.append(outputs["video_embed"].detach().cpu())
@@ -239,6 +254,7 @@ class CLIPAlignModule(LightningModule):
             fold=self._fold_name(),
             save_path=self.save_root,
             num_class=self.num_classes,
+            all_video_name=self.test_video_names,
         )
 
         if (

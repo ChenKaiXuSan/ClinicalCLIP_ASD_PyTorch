@@ -31,6 +31,20 @@ from models.make_model import MakeImageModule
 from utils.helper import save_helper
 from utils.metrics import ClassificationMetrics
 
+
+def _expand_video_names(batch) -> list:
+    """把 batch 里每条视频的名字按其 gait 段数展开,与逐段预测一一对应。
+
+    collate_fn 把一条视频的所有段沿 batch 维拼接,所以段级预测的归属只能从
+    info 里的 num_chunks 还原。存下来是为了能算患者级指标 —— 有效样本量是
+    患者(每折 test 17 人),不是段(约 2800)。
+    """
+    names = []
+    for item in batch.get("info", []):
+        names.extend([item["video_name"]] * int(item["num_chunks"]))
+    return names
+
+
 class CNNModule(LightningModule):
 
     def __init__(self, hparams):
@@ -59,6 +73,7 @@ class CNNModule(LightningModule):
         self.metrics = ClassificationMetrics(self.num_classes)
 
         # 测试期把预测存下来,交给 analysis/compare_concept_runs.py 与主方法同口径汇总
+        self.test_video_names: list = []
         self.test_pred_list = []
         self.test_label_list = []
 
@@ -119,6 +134,9 @@ class CNNModule(LightningModule):
 
         # not use the last frame
         label = label.repeat_interleave(video.size()[2])
+        # 2dcnn 逐帧出预测(b*t 个),名字也要按帧展开才能和预测一一对应
+        for name in _expand_video_names(batch):
+            self.test_video_names.extend([name] * video.size()[2])
         loss = self.single_logic(label, video, "test")
 
     def on_test_epoch_end(self) -> None:
@@ -129,6 +147,7 @@ class CNNModule(LightningModule):
             fold=self._fold_name(),
             save_path=self.save_root,
             num_class=self.num_classes,
+            all_video_name=self.test_video_names,
         )
 
     def _fold_name(self) -> str:

@@ -49,6 +49,19 @@ def _average_precision(score: torch.Tensor, target: torch.Tensor) -> torch.Tenso
     return (precision * hit).sum() / target.sum()
 
 
+
+def _expand_video_names(batch) -> list:
+    """把 batch 里每条视频的名字按其 gait 段数展开,与逐段预测一一对应。
+
+    collate_fn 把一条视频的所有段沿 batch 维拼接,所以段级预测的归属只能从
+    info 里的 num_chunks 还原。存下来是为了能算患者级指标 —— 有效样本量是
+    患者(每折 test 17 人),不是段(约 2800)。
+    """
+    names = []
+    for item in batch.get("info", []):
+        names.extend([item["video_name"]] * int(item["num_chunks"]))
+    return names
+
 class ClinicalConceptModule(LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -157,6 +170,7 @@ class ClinicalConceptModule(LightningModule):
     ##############
 
     def on_test_start(self) -> None:
+        self.test_video_names: list = []
         self.test_pred_list: list[torch.Tensor] = []
         self.test_label_list: list[torch.Tensor] = []
         self.test_region_pred: list[torch.Tensor] = []
@@ -219,6 +233,7 @@ class ClinicalConceptModule(LightningModule):
             self, "test", probs, label, batch_size=label.size(0)
         )
 
+        self.test_video_names.extend(_expand_video_names(batch))
         self.test_pred_list.append(probs.detach().cpu())
         self.test_label_list.append(label.detach().cpu())
 
@@ -281,6 +296,7 @@ class ClinicalConceptModule(LightningModule):
             fold=fold_name,
             save_path=self.save_root,
             num_class=self.num_classes,
+            all_video_name=self.test_video_names,
         )
 
         if self.test_region_pred and self.save_root:

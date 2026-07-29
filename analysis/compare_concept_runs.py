@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 METRIC_KEYS = [
@@ -61,13 +61,17 @@ def posthoc_metrics(exp_dir: Path) -> dict | None:
             f"{latest.relative_to(exp_dir)}"
         )
 
-    preds, labels = [], []
+    preds, labels, names = [], [], []
     for pred_file in sorted((latest / "best_preds").glob("*_pred.pt")):
         label_file = pred_file.with_name(pred_file.name.replace("_pred.pt", "_label.pt"))
         if not label_file.exists():
             continue
         preds.append(torch.load(pred_file, map_location="cpu", weights_only=False))
         labels.append(torch.load(label_file, map_location="cpu", weights_only=False))
+        # 段级预测归属哪条视频/哪个患者。2026-07 之后的运行才有,旧结果没有。
+        name_file = pred_file.with_name(pred_file.name.replace("_pred.pt", "_video_name.json"))
+        if name_file.exists():
+            names.extend(json.loads(name_file.read_text()))
 
     if not preds:
         return None
@@ -85,7 +89,39 @@ def posthoc_metrics(exp_dir: Path) -> dict | None:
     counts = Counter(label.tolist())
     majority = max(counts.values()) / len(label)
 
+    # ---- 患者级 ----
+    # 指标算在段上(每折 test 约 2800 段),但有效样本量是患者(每折 test 17 人)。
+    # 只报段级会严重高估置信度:一个患者的 30 个段全对,看起来像 30 次正确预测。
+    # 患者级用该患者所有段的概率均值再取 argmax(等价于软投票)。
+    patient = None
+    if names and len(names) == label.numel():
+        by_patient: dict[str, list[int]] = defaultdict(list)
+        for idx, vid in enumerate(names):
+            by_patient[vid.split("-")[0]].append(idx)
+
+        p_pred, p_label = [], []
+        for _, idxs in sorted(by_patient.items()):
+            sel = torch.tensor(idxs)
+            p_pred.append(int(prob[sel].mean(dim=0).argmax()))
+            p_label.append(int(label[sel].mode().values))
+        p_pred_t = torch.tensor(p_pred)
+        p_label_t = torch.tensor(p_label)
+
+        p_recalls = []
+        for c in range(num_class):
+            m = p_label_t == c
+            p_recalls.append(float((p_pred_t[m] == c).float().mean()) if m.any() else float("nan"))
+        valid = [r for r in p_recalls if r == r]
+        patient = {
+            "acc_macro": sum(valid) / max(len(valid), 1),
+            "acc_micro": float((p_pred_t == p_label_t).float().mean()),
+            "per_class_recall": p_recalls,
+            "n_patient": len(p_label),
+            "class_count": {int(k): int(v) for k, v in sorted(Counter(p_label).items())},
+        }
+
     return {
+        "patient": patient,
         "acc_macro": sum(r for r in recalls if r == r) / max(sum(1 for r in recalls if r == r), 1),
         "acc_micro": float((pred == label).float().mean()),
         "per_class_recall": recalls,
@@ -160,8 +196,24 @@ def main() -> None:
         print(
             f"{name:32s} macro {extra['acc_macro']:.4f} (基线 {extra['baseline_macro']:.3f}) | "
             f"micro {extra['acc_micro']:.4f} (基线 {extra['baseline_micro']:.3f}) | "
-            f"逐类召回 {per_class} | n={extra['n_sample']}"
+            f"逐类召回 {per_class} | n段={extra['n_sample']}"
         )
+
+    # 患者级才是有效样本量:一个患者的几十个段全对,段级看起来像几十次正确预测
+    print("\n=== 患者级(每患者按概率均值软投票)===")
+    missing = []
+    for name in summary:
+        pat = (summary[name].get("posthoc") or {}).get("patient")
+        if pat is None:
+            missing.append(name)
+            continue
+        per_class = " ".join(f"{r:.3f}" for r in pat["per_class_recall"])
+        print(
+            f"{name:32s} macro {pat['acc_macro']:.4f} | micro {pat['acc_micro']:.4f} | "
+            f"逐类召回 {per_class} | n患者={pat['n_patient']} {pat['class_count']}"
+        )
+    if missing:
+        print(f"({len(missing)} 个实验缺 video_name,是 2026-07 之前跑的,只能看段级)")
 
     # 消融对照:同名去掉 _shuffled 的两个实验配对
     print("\n=== 区域消融对照 (正常 vs 打乱区域) ===")

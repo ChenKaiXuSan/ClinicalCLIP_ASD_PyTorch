@@ -36,6 +36,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
+
 import torch
 from torchmetrics.classification import (
     MulticlassAccuracy,
@@ -55,6 +57,7 @@ def save_helper(
     fold: str,
     save_path: str,
     num_class: int,
+    all_video_name: list[str] | None = None,
 ):
     """save the inference results and metrics.
 
@@ -64,6 +67,10 @@ def save_helper(
         fold (str): fold number.
         save_path (str): save path.
         num_class (int): number of class.
+        all_video_name (list): 每个预测对应的视频名,逐段展开。用来把段级预测
+            聚合到患者级 —— 指标算在段上(每折 test 约 2800 段)但有效样本量是
+            患者(每折 test 17 人),只报段级会严重高估置信度。事后无法从
+            pred/label 反推归属,所以必须在这里一起存下来。
     """
 
     # check device 
@@ -74,6 +81,12 @@ def save_helper(
         
     all_pred: torch.Tensor = torch.cat(all_pred, dim=0)
     all_label: torch.Tensor = torch.cat(all_label, dim=0)
+
+    if all_video_name is not None:
+        out_path = Path(save_path) / "best_preds"
+        out_path.mkdir(parents=True, exist_ok=True)
+        with open(out_path / f"{fold}_video_name.json", "w") as f:
+            json.dump(list(all_video_name), f)
 
     save_inference(all_pred, all_label, fold, save_path)
     save_metrics(all_pred, all_label, fold, save_path, num_class)

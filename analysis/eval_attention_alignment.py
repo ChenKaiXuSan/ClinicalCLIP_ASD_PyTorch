@@ -121,6 +121,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root-path", default="/mnt/data/xchen/asd_data")
     parser.add_argument("--fold", default="0")
+    parser.add_argument("--class-num", type=int, default=2, help="划分缓存按类别数分目录")
     parser.add_argument("--ckpt", default=None, help="3dcnn 基线 checkpoint,用于 Grad-CAM")
     parser.add_argument("--limit", type=int, default=60, help="评估多少条视频")
     parser.add_argument("--img-size", type=int, default=224)
@@ -130,8 +131,13 @@ def main() -> None:
     args = parser.parse_args()
 
     info = Path(args.root_path) / "clinical_CLIP_dataset"
-    folds = json.load(open(info / "index_mapping/3/index.json"))
-    paths = [Path(p) for p in folds[args.fold]["val"]][: args.limit]
+    # 类别数写死过 3,清掉三分类之后那个目录就没了;改成跟着参数走。
+    # 评估集用 test 而不是 val —— val 是选 checkpoint 用的,拿它报可解释性指标
+    # 等于又在模型选择过的数据上报成绩。
+    folds = json.load(
+        open(info / "index_mapping" / str(args.class_num) / "index.json")
+    )
+    paths = [Path(p) for p in folds[args.fold]["test"]][: args.limit]
 
     med = MedAttnMap(str(info / "doctor_result"), str(info / "seg_skeleton_pkl"))
     dataset = LabeledGaitVideoDataset(
@@ -170,7 +176,11 @@ def main() -> None:
         video = sample["video"].to(device)
         region_map = sample["region_map"].to(device)
         target = sample["region_target"].to(device).unsqueeze(0).expand(video.shape[0], -1)
-        label = torch.full((video.shape[0],), sample["label"], device=device, dtype=torch.long)
+        # json 里存的是原始的三分类标签(ASD=0 / DHS=1 / LCS_HipOA=2),而模型是
+        # 二分类;不折叠的话 Grad-CAM 的 logits.gather 会在 LCS 样本上索引越界。
+        raw_label = int(sample["label"])
+        cls = raw_label if args.class_num > 2 else int(raw_label > 0)
+        label = torch.full((video.shape[0],), cls, device=device, dtype=torch.long)
 
         # 参照图与 concept 架构的 token 分辨率对齐
         t_tok = args.num_samples
