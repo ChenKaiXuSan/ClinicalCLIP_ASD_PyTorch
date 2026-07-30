@@ -35,10 +35,16 @@ for fold in ${FOLDS//,/ }; do
     if [[ "${NO_GRADCAM:-0}" != "1" ]]; then
         ckpt="${CKPT:-}"
         if [[ -z "${ckpt}" ]]; then
-            # logs/train/<tag>/<日期>/<时刻>/checkpoint/<fold>/*.ckpt,取最新的一个
-            ckpt=$(find "logs/train/${BASELINE_TAG}__f${fold}_s42" \
-                        -path "*/checkpoint/${fold}/*.ckpt" ! -name "last.ckpt" \
-                        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+            # checkpoint 文件名是 <epoch>-<loss>-<val_acc>.ckpt。要挑**val 最高**的那个,
+            # 按 mtime 挑会拿到最后写下的(save_top_k=2 里分数更低的那个) —— 实测取到
+            # 0.6678 而不是 0.7753。先取最新一次运行的目录,再在里面按分数排序。
+            run_dir=$(find "logs/train/${BASELINE_TAG}__f${fold}_s42" -type d \
+                          -path "*/checkpoint/${fold}" -printf '%T@ %p\n' 2>/dev/null \
+                          | sort -rn | head -1 | cut -d' ' -f2-)
+            if [[ -n "${run_dir}" ]]; then
+                ckpt=$(ls "${run_dir}"/*.ckpt 2>/dev/null | grep -v last.ckpt \
+                       | awk -F- '{print $NF" "$0}' | sort -rn | head -1 | cut -d' ' -f2-)
+            fi
         fi
         if [[ -n "${ckpt}" ]]; then
             echo "fold ${fold}: Grad-CAM checkpoint = ${ckpt}"
@@ -52,6 +58,7 @@ for fold in ${FOLDS//,/ }; do
     python analysis/eval_attention_alignment.py \
         --root-path "${DATA_ROOT}" \
         --fold "${fold}" \
+        --class-num "${CLASS_NUM:-2}" \
         --limit "${LIMIT}" \
         ${CKPT_ARG} \
         2>&1 | tee "logs/pegasus/attn_alignment_fold${fold}.log"

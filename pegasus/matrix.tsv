@@ -34,3 +34,12 @@ ablation	A4_no_prior	model.backbone=concept loss.grounding_weight=0 loss.presenc
 # ============ 标注者分歧:软标签设计是否真的更好 ============
 annotator	D1_doctor1_only	model.backbone=concept model.doctor_source=doctor1
 annotator	D2_doctor2_only	model.backbone=concept model.doctor_source=doctor2
+
+# ============ grounding 强度扫描:画出精度↔可解释性的取舍前沿 ============
+# A1_no_grounding 就是 weight=0,M0_concept_learned 是默认的 1.0,这里补中间与更强的点。
+# 目的有两个:(1) 论文核心图 —— 这条前沿是平滑取舍还是断崖;
+# (2) 若是断崖,说明更可能是优化问题而非本质取舍,"用精度换可解释性"的说法要重写。
+sweep	S1_ground_0.1	model.backbone=concept loss.grounding_weight=0.1
+sweep	S2_ground_0.5	model.backbone=concept loss.grounding_weight=0.5
+sweep	S3_ground_2.0	model.backbone=concept loss.grounding_weight=2.0
+sweep	S4_ground_5.0	model.backbone=concept loss.grounding_weight=5.0
