@@ -51,3 +51,10 @@ sweep	S4_ground_5.0	model.backbone=concept loss.grounding_weight=5.0
 # 与 B0_3dcnn 的分类输入同宽,其余完全不变。
 # 若 G0 追上或超过 B0,"先验损害分类"这个结论就是架构混淆造成的。
 arch	G0_global_raw	model.backbone=concept model.concept_global_from_raw=true
+# ① grounding 只约束空间维。医生区域图逐帧质量变异系数仅 0.043,联合 softmax
+#    等于强制"每帧同等重要",无临床依据却剥夺了聚焦判别性时刻的能力。
+#    池化不变,唯一变量是 grounding 是否约束时间轴。
+arch	G1_spatial_ground	model.backbone=concept model.concept_spatial_softmax=true
+# ② 加一个不受 grounding 约束的背景概念槽位。grounding 把注意力拉向 49 格中约 2 格,
+#    区域外的判别证据进不了概念通路。与 G0 的宽旁路不同,这里宽度不变、只多一个槽位。
+arch	G2_background	model.backbone=concept model.concept_background=true

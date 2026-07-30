@@ -79,6 +79,12 @@ model:
   # 被 grounding 塑形的瓶颈 —— "先验只是引导, 不该成为唯一通路"其实没做到。
   # true: 取投影前的 2048 维, 与 B0_3dcnn 的分类输入同宽。
   concept_global_from_raw: false
+  # grounding 是否只约束空间维。医生区域图逐帧质量的变异系数只有 0.043(时间上
+  # 几乎均匀),联合 softmax 等于强制"每帧同等重要",没有临床依据。true 时池化
+  # 不变,只把交给 grounding 的那份的时间边缘换成均匀。
+  concept_spatial_softmax: false
+  # 是否加一个不受 grounding 约束的背景概念槽位,给区域外的判别证据一个去处。
+  concept_background: false
   shuffle_region: false # 消融: 打乱区域标注, 检验增益是否来自临床知识
   # both | doctor1 | doctor2。两位医生仅 45.7% 一致, 用来检验软标签设计是否
   # 真的优于只用单个标注者

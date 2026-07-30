@@ -110,8 +110,17 @@ class ConceptCrossAttention(nn.Module):
     预测端,也是推理时可直接可视化的解释。
     """
 
-    def __init__(self, embed_dim: int, temperature: float = 0.07) -> None:
+    def __init__(
+        self, embed_dim: int, temperature: float = 0.07, spatial_softmax: bool = False
+    ) -> None:
         super().__init__()
+        # 联合 softmax 恰好可分解为 逐帧空间 softmax × 时间维 softmax(logsumexp)。
+        # spatial_softmax=True 时**池化仍用联合分布(与默认完全一致)**,只把交给
+        # grounding 与可视化的那一份的时间边缘换成均匀 —— 因为医生区域图逐帧质量
+        # 的变异系数只有 0.043,时间上几乎均匀,那个约束等于强制"每帧同等重要",
+        # 没有临床依据,却剥夺了模型聚焦判别性时刻(如触地)的能力。
+        # 这样这条消融是外科式的:唯一变量就是 grounding 是否约束时间轴。
+        self.spatial_softmax = bool(spatial_softmax)
         self.key = nn.Conv3d(embed_dim, embed_dim, kernel_size=1)
         self.value = nn.Conv3d(embed_dim, embed_dim, kernel_size=1)
         self.query = nn.Linear(embed_dim, embed_dim)
@@ -129,10 +138,19 @@ class ConceptCrossAttention(nn.Module):
 
         scale = self.log_temperature.exp().clamp(max=100.0)
         logits = torch.einsum("rd,bdn->brn", q, k) * scale  # (B, R, N)
-        attn = logits.softmax(dim=-1)
 
-        feat = torch.einsum("brn,bdn->brd", attn, v)  # (B, R, d)
-        return attn.view(b, -1, t, h, w), feat
+        r = logits.shape[1]
+        lg = logits.view(b, r, t, h * w)
+        spatial = lg.softmax(dim=-1)                       # (B,R,T,HW) 逐帧空间分布
+        temporal = lg.logsumexp(dim=-1).softmax(dim=-1)    # (B,R,T)    时间边缘
+        joint = spatial * temporal.unsqueeze(-1)           # 与 logits.softmax(-1) 逐元素相等
+
+        # 池化恒用联合分布,两条臂完全一致
+        feat = torch.einsum("brn,bdn->brd", joint.reshape(b, r, -1), v)  # (B, R, d)
+
+        # 交给 grounding / 可视化的那一份:可选把时间边缘换成均匀
+        out = spatial / t if self.spatial_softmax else joint
+        return out.view(b, r, t, h, w), feat
 
 
 class ClinicalConceptNet(nn.Module):
@@ -161,7 +179,19 @@ class ClinicalConceptNet(nn.Module):
         self.cross_attention = ConceptCrossAttention(
             embed_dim=self.embed_dim,
             temperature=float(getattr(cfg, "concept_temperature", 0.07)),
+            spatial_softmax=bool(getattr(cfg, "concept_spatial_softmax", False)),
         )
+
+        # 背景概念:第 R+1 个槽位,**不参与 grounding**,给区域外的判别证据一个正当去处。
+        # grounding 把概念注意力拉向 49 格中的约 2 格(医生区域图 50% 的质量只占
+        # ~4% 的格子),区域外的信息进不了概念通路 —— 这是 grounding 分类代价的
+        # 一个候选机制。
+        # 与 G0_global_raw 的区别很关键:G0 给的是 2048 维旁路,占分类器输入 89%,
+        # 模型直接绕开概念通路、退化到 A4 水平(0/5 全负)。背景槽位仍走同一套交叉
+        # 注意力、同样的 256 维聚合,宽度不变,只是多一个位置。
+        self.use_background = bool(getattr(cfg, "concept_background", False))
+        if self.use_background:
+            self.background = nn.Parameter(torch.randn(1, self.embed_dim) * 0.02)
 
         # 预测"医生会关注哪些区域",既是监督信号也是推理期的可解释输出
         self.presence_head = nn.Sequential(
@@ -195,8 +225,21 @@ class ClinicalConceptNet(nn.Module):
         else:
             tokens, raw_tokens = self.backbone(video), None
         concepts = self.concepts()  # (R, d)
+        # 背景槽位只参与交叉注意力与特征聚合,不进 concept_contrastive_loss ——
+        # 那个损失的语义是"region_feat[r] 对上 concept[r],负例是另外 4 个临床概念",
+        # 多一个背景概念会把负例数改掉,输出里也就只暴露前 R 个。
+        attn_concepts = (
+            torch.cat([concepts, self.background], dim=0)
+            if self.use_background
+            else concepts
+        )
 
-        attn, region_feat = self.cross_attention(tokens, concepts)
+        attn, feat_all = self.cross_attention(tokens, attn_concepts)
+
+        # 背景槽位没有医生标注,不进存在性头、也不进 grounding:
+        # attn 与 region_logits 都只保留前 R 个临床概念,损失与指标口径完全不变
+        region_feat = feat_all[:, : self.num_regions]
+        attn = attn[:, : self.num_regions]
 
         region_logits = self.presence_head(region_feat).squeeze(-1)  # (B, R)
 
@@ -205,7 +248,14 @@ class ClinicalConceptNet(nn.Module):
         # clamp 而非 +1e-6:后者在所有 logit 都被推到很负时(某视频没有任何医生
         # 标注)会破坏加权平均的尺度不变性,把特征模长静默压到接近 0,使这类
         # 样本的分类器输入分布与正常样本完全不同
-        concept_feat = (region_feat * weight).sum(dim=1) / weight.sum(dim=1).clamp_min(
+        if self.use_background:
+            # 背景槽位恒参与(权重 1),其余按"该区域被关注的概率"加权
+            bg_feat = feat_all[:, self.num_regions :]                      # (B,1,d)
+            feats = torch.cat([region_feat, bg_feat], dim=1)               # (B,R+1,d)
+            weight = torch.cat([weight, weight.new_ones(weight.shape[0], 1, 1)], dim=1)
+        else:
+            feats = region_feat
+        concept_feat = (feats * weight).sum(dim=1) / weight.sum(dim=1).clamp_min(
             1e-2
         )  # (B, d)
         # 全局通路:概念注意力管不到的那条路
