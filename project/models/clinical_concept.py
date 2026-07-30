@@ -170,14 +170,30 @@ class ClinicalConceptNet(nn.Module):
             nn.Linear(self.embed_dim // 2, 1),
         )
 
-        # 分类头同时看概念加权特征和全局特征:先验只是引导,不该成为唯一通路
+        # 分类头同时看概念加权特征和全局特征:先验只是引导,不该成为唯一通路。
+        #
+        # 但"不该成为唯一通路"此前只写在注释里没做到:global_feat 也取自
+        # token_proj 之后的 embed_dim(256)维 token,和概念通路共用同一个
+        # 2048 -> 256 的瓶颈,而这个投影正被 grounding 损失塑形 —— 全局通路
+        # 无处可逃。证据:A4_no_prior(先验全关)患者级 macro 只有 0.566,比
+        # 朴素 slow_r50 基线低 14.5 点,而先验又找回 7.9 点。也就是说亏的是
+        # 架构不是先验。
+        #
+        # concept_global_from_raw=true 时全局通路改取**投影前**的 token_dim
+        # (2048)维,与 B0_3dcnn 的分类输入同宽。默认 false 保持既有行为,
+        # 两条臂只差这一个变量。
+        self.global_from_raw = bool(getattr(cfg, "concept_global_from_raw", False))
+        global_dim = self.backbone.token_dim if self.global_from_raw else self.embed_dim
         self.classifier = nn.Sequential(
-            nn.LayerNorm(self.embed_dim * 2),
-            nn.Linear(self.embed_dim * 2, self.num_classes),
+            nn.LayerNorm(self.embed_dim + global_dim),
+            nn.Linear(self.embed_dim + global_dim, self.num_classes),
         )
 
     def forward(self, video: torch.Tensor) -> dict[str, torch.Tensor]:
-        tokens = self.backbone(video)  # (B, d, T', H', W')
+        if self.global_from_raw:
+            tokens, raw_tokens = self.backbone(video, return_raw=True)
+        else:
+            tokens, raw_tokens = self.backbone(video), None
         concepts = self.concepts()  # (R, d)
 
         attn, region_feat = self.cross_attention(tokens, concepts)
@@ -192,7 +208,8 @@ class ClinicalConceptNet(nn.Module):
         concept_feat = (region_feat * weight).sum(dim=1) / weight.sum(dim=1).clamp_min(
             1e-2
         )  # (B, d)
-        global_feat = tokens.mean(dim=(2, 3, 4))  # (B, d)
+        # 全局通路:概念注意力管不到的那条路
+        global_feat = (raw_tokens if raw_tokens is not None else tokens).mean(dim=(2, 3, 4))
 
         logits = self.classifier(torch.cat([concept_feat, global_feat], dim=-1))
 

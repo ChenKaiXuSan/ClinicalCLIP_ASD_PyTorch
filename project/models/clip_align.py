@@ -175,11 +175,20 @@ class ResNet3DTokenEncoder(nn.Module):
             in_channels=in_channels,
             pretrained=pretrained,
         )
+        self.token_dim = token_dim
         self.token_proj = nn.Conv3d(token_dim, hidden_dim, kernel_size=1, bias=False)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        tokens = self.backbone(x)
-        return self.token_proj(tokens)
+    def forward(
+        self, x: torch.Tensor, return_raw: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """return_raw=True 时额外返回**投影前**的 token(token_dim 维)。
+
+        投影是个 2048 -> hidden_dim 的瓶颈,concept 架构默认 hidden_dim=256。
+        需要一条不经过这个瓶颈的通路时用它。
+        """
+        raw = self.backbone(x)
+        tokens = self.token_proj(raw)
+        return (tokens, raw) if return_raw else tokens
 
 
 class FrameEncoder(nn.Module):

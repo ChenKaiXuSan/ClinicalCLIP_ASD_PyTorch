@@ -74,6 +74,11 @@ model:
   concept_text_embedding: null
   concept_freeze_text: true
   region_map_size: 28 # grounding 目标图的空间分辨率
+  # 分类头的全局通路是否绕开 token_proj 的 2048 -> concept_embed_dim 瓶颈。
+  # false(默认, 既有行为): 全局特征也取投影后的 256 维, 与概念通路共用同一个
+  # 被 grounding 塑形的瓶颈 —— "先验只是引导, 不该成为唯一通路"其实没做到。
+  # true: 取投影前的 2048 维, 与 B0_3dcnn 的分类输入同宽。
+  concept_global_from_raw: false
   shuffle_region: false # 消融: 打乱区域标注, 检验增益是否来自临床知识
   # both | doctor1 | doctor2。两位医生仅 45.7% 一致, 用来检验软标签设计是否
   # 真的优于只用单个标注者

@@ -43,3 +43,11 @@ sweep	S1_ground_0.1	model.backbone=concept loss.grounding_weight=0.1
 sweep	S2_ground_0.5	model.backbone=concept loss.grounding_weight=0.5
 sweep	S3_ground_2.0	model.backbone=concept loss.grounding_weight=2.0
 sweep	S4_ground_5.0	model.backbone=concept loss.grounding_weight=5.0
+
+# ============ 架构:全局通路绕开 256 维瓶颈 ============
+# A4_no_prior(先验全关)只有 0.566,比朴素 slow_r50 基线低 14.5 点,而先验又找回
+# 7.9 点 —— 亏的是架构不是先验。怀疑点:global_feat 也走 token_proj 之后的 256 维,
+# 与概念通路共用同一个被 grounding 塑形的瓶颈。这一格让它改取投影前的 2048 维,
+# 与 B0_3dcnn 的分类输入同宽,其余完全不变。
+# 若 G0 追上或超过 B0,"先验损害分类"这个结论就是架构混淆造成的。
+arch	G0_global_raw	model.backbone=concept model.concept_global_from_raw=true
