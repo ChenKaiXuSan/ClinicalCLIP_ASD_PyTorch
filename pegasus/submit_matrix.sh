@@ -22,6 +22,10 @@ DATA_ROOT="${CLINICALCLIP_DATA_ROOT:-/work/SKIING/chenkaixu/data/asd_dataset}"
 EMB="${EMB:-${DATA_ROOT}/concepts/clip_vit_b32.pt}"
 
 GROUP="${GROUP:-all}"        # 逗号分隔,对应 matrix.tsv 第一列;all 表示全部
+# 按实验名精确挑选,逗号分隔。分组是按用途划的,而跨组挑几个配置(比如只给承载论点
+# 的那几格补种子)用 GROUP 表达不了。留空表示不按名字过滤。
+#   ONLY=B0_3dcnn,M0_concept_learned SEEDS=1337,2024 bash pegasus/submit_matrix.sh
+ONLY="${ONLY:-}"
 FOLDS="${FOLDS:-0-4}"        # 全库统一 5 折
 SEEDS="${SEEDS:-42}"
 EPOCHS="${EPOCHS:-100}"      # 统一 100 epochs,不用 early stopping
@@ -92,19 +96,25 @@ want_group() {
     [[ ",${GROUP}," == *",$1,"* ]]
 }
 
+want_name() {
+    [[ -z "${ONLY}" ]] && return 0
+    [[ ",${ONLY}," == *",$1,"* ]]
+}
+
 # ---- 读矩阵 ----
 declare -a NAMES=() ARGSS=()
 needs_emb=0
 while IFS=$'\t' read -r grp name args; do
     [[ -z "${grp:-}" || "${grp}" == \#* ]] && continue
     want_group "${grp}" || continue
+    want_name "${name}" || continue
     [[ "${args}" == *EMB* ]] && needs_emb=1
     NAMES+=("${name}")
     ARGSS+=("${args//EMB/${EMB}}")
 done < pegasus/matrix.tsv
 
 if (( ${#NAMES[@]} == 0 )); then
-    echo "ERROR: GROUP=${GROUP} 没有匹配到任何实验" >&2
+    echo "ERROR: GROUP=${GROUP} ONLY=${ONLY:-<无>} 没有匹配到任何实验" >&2
     exit 1
 fi
 
