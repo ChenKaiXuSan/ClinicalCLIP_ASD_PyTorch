@@ -77,6 +77,9 @@ class ClinicalConceptModule(LightningModule):
         self.num_classes = int(getattr(hparams.model, "model_class_num", 3))
         # 消融用:把医生区域换成随机区域,检验增益是否真来自临床知识
         self.shuffle_region = bool(getattr(hparams.model, "shuffle_region", False))
+        self.random_region_map = bool(
+            getattr(hparams.model, "random_region_map", False)
+        )
 
         self.model = ClinicalConceptNet(hparams)
 
@@ -111,6 +114,39 @@ class ClinicalConceptModule(LightningModule):
         index = perm.view(b, r, *([1] * (region_map.dim() - 2))).expand_as(region_map)
         return region_map.gather(1, index), target
 
+    def _maybe_randomize(self, region_map, region_target):
+        """对照:把 grounding 的空间目标随机平移到解剖上错误的位置。
+
+        回答的问题是 A0_shuffle_region 回答不了的那个 —— 剩下的分类代价是
+        **医生区域特有**的,还是任何空间约束都会有?
+
+        - 随机约束也掉同样多 -> 代价来自"存在空间约束"本身,不能归因于临床对齐
+        - 随机约束掉得更多(或对齐度上不去) -> 医生选的位置是特殊的
+
+        用随机平移而不是重新生成高斯:斑点的形状、大小、集中度(单区域 50% 质量
+        占约 4% 的格子)、以及时间剖面(逐帧质量变异系数 0.043)全部逐样本保持不变,
+        唯一被破坏的就是解剖位置。这样才是干净的对照。
+        存在性标签不动,只换空间目标。
+        """
+        if not self.random_region_map or region_map is None:
+            return region_map
+
+        b, r = region_map.shape[:2]
+        h, w = region_map.shape[-2:]
+        out = region_map
+        # 每个样本、每个区域各自一个随机平移量
+        sh = torch.randint(0, h, (b, r), device=region_map.device)
+        sw = torch.randint(0, w, (b, r), device=region_map.device)
+        rows = torch.arange(h, device=region_map.device)
+        cols = torch.arange(w, device=region_map.device)
+        # gather 实现逐样本 roll:idx[b,r,i] = (i - shift) % size
+        ri = (rows[None, None, :] - sh[..., None]) % h            # (B,R,H)
+        ci = (cols[None, None, :] - sw[..., None]) % w            # (B,R,W)
+        ri = ri.view(b, r, *([1] * (out.dim() - 4)), h, 1).expand_as(out)
+        out = out.gather(-2, ri)
+        ci = ci.view(b, r, *([1] * (out.dim() - 4)), 1, w).expand_as(out)
+        return out.gather(-1, ci)
+
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
         video = batch["video"].detach()
         label = batch["label"].detach().long()
@@ -120,6 +156,7 @@ class ClinicalConceptModule(LightningModule):
             region_map = region_map.detach()
             region_target = region_target.detach().float()
         region_map, region_target = self._maybe_shuffle(region_map, region_target)
+        region_map = self._maybe_randomize(region_map, region_target)
 
         outputs = self.model(video)
         logits = outputs["logits"]

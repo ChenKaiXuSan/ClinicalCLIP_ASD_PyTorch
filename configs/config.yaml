@@ -86,6 +86,9 @@ model:
   # 是否加一个不受 grounding 约束的背景概念槽位,给区域外的判别证据一个去处。
   concept_background: false
   shuffle_region: false # 消融: 打乱区域标注, 检验增益是否来自临床知识
+  # 对照: 把 grounding 的空间目标随机平移到解剖上错误的位置(形状/集中度/时间剖面
+  # 全部保持不变)。回答"剩下的分类代价是医生区域特有的, 还是任何空间约束都有"。
+  random_region_map: false
   # both | doctor1 | doctor2。两位医生仅 45.7% 一致, 用来检验软标签设计是否
   # 真的优于只用单个标注者
   doctor_source: "both"

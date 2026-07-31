@@ -58,3 +58,8 @@ arch	G1_spatial_ground	model.backbone=concept model.concept_spatial_softmax=true
 # ② 加一个不受 grounding 约束的背景概念槽位。grounding 把注意力拉向 49 格中约 2 格,
 #    区域外的判别证据进不了概念通路。与 G0 的宽旁路不同,这里宽度不变、只多一个槽位。
 arch	G2_background	model.backbone=concept model.concept_background=true
+# 对照:grounding 目标随机平移到解剖错误的位置(形状/集中度/时间剖面不变)。
+# 与 A0 不同 —— A0 是"同一副骨架换个区域",这里是"根本不对应任何解剖位置"。
+# 分类掉得一样多 => 代价来自空间约束本身, 不能归因于临床对齐;掉得更多或对齐上不去
+# => 医生选的位置是特殊的。这一格决定论文能否把代价说成临床对齐的固有成本。
+arch	G3_random_map	model.backbone=concept model.random_region_map=true
