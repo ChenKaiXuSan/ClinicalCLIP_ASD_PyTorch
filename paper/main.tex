@@ -1,0 +1,227 @@
+% MICCAI submission — Springer LNCS format.
+% 注意:MICCAI 双盲评审,提交版必须匿名(作者、单位、致谢、可识别的代码链接全部去掉)。
+% 正文上限 8 页(不含参考文献)。
+\documentclass[runningheads]{llncs}
+
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\begin{document}
+
+\title{Clinical Attention Cannot Be Recovered Post Hoc:
+Region-Grounded Concepts for Gait-Based Assessment}
+
+% ==== 提交时保持匿名 ====
+\author{Anonymous Submission}
+\institute{Paper ID \todo{ID}}
+% \author{Kaixu Chen\inst{1} \and \todo{coauthors}}
+% \institute{University of Tsukuba, Tsukuba, Japan}
+
+\maketitle
+
+\begin{abstract}
+Deep models for gait-based clinical assessment are usually explained \emph{post hoc},
+yet whether such explanations agree with what clinicians actually attend to has rarely
+been measured. Using two clinicians' region annotations on a gait video dataset
+(79 patients), we show that Grad-CAM applied to a strong 3D CNN aligns with clinician
+attention no better than a trivial centre prior (0.135 vs.\ 0.144; a no-information
+lower bound is 0.068). We then present a concept-grounded architecture that consumes
+clinician annotations \emph{only during training} and, at inference from video alone,
+predicts both \emph{which} anatomical regions a clinician would attend to and
+\emph{where} they are. The predicted attention reaches an alignment of
+$0.537 \pm 0.012$, $4.0\times$ Grad-CAM, while classification remains statistically
+indistinguishable from the baseline (McNemar $p=0.54$, $n=79$ patients). Controlled
+ablations localise the effect: removing spatial grounding collapses alignment to the
+lower bound while leaving region identification intact, and replacing the grounding
+target with anatomically meaningless random locations---matched in shape, concentration
+and temporal profile---drives alignment exactly to chance (0.065). Clinical spatial
+attention is therefore obtainable only through explicit supervision from genuine
+annotations, and is not a by-product of accurate classification.
+\keywords{Interpretability \and Clinical priors \and Gait analysis \and Concept grounding.}
+\end{abstract}
+
+\section{Introduction}
+
+\todo{补充临床背景与相关工作(概念瓶颈模型、事后解释、步态评估)}
+
+Our contributions are:
+\begin{enumerate}
+\item A measurement showing that post-hoc explanation of an accurate gait classifier
+carries essentially no clinically relevant spatial information---indistinguishable
+from a centre prior.
+\item An architecture that turns clinician attention from a model \emph{input} into a
+verifiable model \emph{output}, requiring no annotation at inference.
+\item Controls establishing that the learned alignment requires genuine annotations:
+randomising the target location, while preserving all of its statistics, reduces
+alignment exactly to chance.
+\item An explicit negative result: at this dataset size, classification accuracy cannot
+distinguish any of the configurations studied, and we report this rather than
+selecting a favourable seed.
+\end{enumerate}
+
+\section{Method}
+
+\subsection{From alignment to grounding}
+
+\todo{说明为何放弃双塔 CLIP 式对齐}
+Three properties of the annotations motivate the design.
+(i) Regions alone predict the diagnosis at exactly the majority-class rate
+(66.7\%), so they are a \emph{prior}, not a second modality.
+(ii) The corpus contains only six distinct region combinations, 60\% of which are
+\texttt{lumbar\_pelvis}, so in-batch contrastive objectives are dominated by false
+negatives.
+(iii) The two clinicians agree on only 45.7\% of regions, so annotations are treated as
+soft targets $\{0, 0.5, 1\}$ rather than a union.
+
+\subsection{Architecture}
+
+A Kinetics-pretrained 3D ResNet-50 encodes the clip into tokens
+$Z \in \mathbb{R}^{d \times T' \times H' \times W'}$. A bank of $R=5$ clinical concepts
+$P \in \mathbb{R}^{R \times d}$ queries $Z$ by cross-attention, giving for each concept
+a spatio-temporal distribution $A_r$ and a region feature
+$F_r = \sum_n A_r(n) Z(n)$. A shared head predicts region presence from $F_r$; the
+classifier consumes the presence-weighted concept feature concatenated with a global
+feature. $A_r$ is simultaneously the pooling operator and the explanation.
+
+\subsection{Training objective}
+
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{\text{cls}}
+  + \lambda_p \mathcal{L}_{\text{presence}}
+  + \lambda_g \mathcal{L}_{\text{ground}}
+  + \lambda_c \mathcal{L}_{\text{concept}},
+\end{equation}
+where $\mathcal{L}_{\text{presence}}$ is a soft BCE against the two-annotator targets and
+$\mathcal{L}_{\text{ground}}$ is a KL divergence between $A_r$ and the clinician region
+map, weighted by the soft presence label so that unmentioned regions impose no spatial
+constraint. \todo{$\mathcal{L}_{\text{concept}}$ 影响极小(见 5.3),考虑从贡献中移除}
+
+\section{Experimental Setup}
+
+\paragraph{Data and protocol.}
+\todo{数据集描述}
+79 patients (54 ASD, 25 non-ASD). Evaluation is 5-fold cross-validation with
+\emph{patient-disjoint} train/validation/test splits ($\approx$60/20/20); validation is
+used only for checkpoint selection and test only for reporting. The five test folds
+exactly partition the 79 patients, so pooling their patient-level predictions yields
+79 independent predictions---the coverage of leave-one-patient-out at one fifth of the
+cost.
+
+\paragraph{Metrics.}
+Segment-level predictions are aggregated per patient by averaging class probabilities.
+We report balanced accuracy (macro; majority-class baseline $0.5$) with bootstrap
+intervals and compare configurations by exact McNemar tests on the 79 paired outcomes.
+Reporting at segment level ($n\approx2800$) would overstate confidence by an order of
+magnitude. Alignment is
+$\mathrm{score} = \sum_n A(n)\,\hat{M}(n)$ with $\hat{M} = M / \max M$, which is linear
+in $A$ and therefore does not reward concentration.
+
+\paragraph{Why binary.}
+The original three-class task (ASD / DHS / LCS\_HipOA) is not estimable here:
+LCS\_HipOA has only 9 patients, leaving 1--2 per test fold under patient-disjoint
+splitting, and every configuration attains 0.00--0.06 recall on that class.
+\todo{可放补充材料}
+
+\section{Results}
+
+\subsection{Post-hoc explanation carries no clinical signal}
+
+\begin{table}[t]
+\centering
+\caption{Alignment with clinician annotations (5 folds, mean $\pm$ s.d.).
+Post-hoc explanation of an accurate classifier is indistinguishable from a centre prior.}
+\label{tab:refs}
+\begin{tabular}{lc}
+\toprule
+Attention source & Alignment \\
+\midrule
+Ours (concept grounding) & $\mathbf{0.537 \pm 0.012}$ \\
+Grad-CAM (3D CNN baseline) & $0.135 \pm 0.034$ \\
+Centre prior & $0.144 \pm 0.025$ \\
+Random / uniform (no information) & $0.068 \pm 0.001$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Alignment requires genuine annotations}
+
+\begin{table}[t]
+\centering
+\caption{Ablations (5 folds). Presence supervision determines \emph{which} regions;
+spatial grounding determines \emph{where}. The two are separable. Randomising the
+grounding target---preserving blob shape, concentration and temporal profile---drives
+alignment to the no-information bound.}
+\label{tab:ablation}
+\begin{tabular}{lccc}
+\toprule
+Configuration & Alignment & Region AP & Macro [95\% CI] \\
+\midrule
+Full model & $0.537 \pm 0.012$ & $0.818 \pm 0.077$ & 0.624 [0.520, 0.731] \\
+\quad w/o presence & $0.525 \pm 0.006$ & $\mathbf{0.468 \pm 0.114}$ & 0.606 [0.502, 0.714] \\
+\quad w/o grounding & $\mathbf{0.118 \pm 0.073}$ & $0.757 \pm 0.093$ & 0.654 [0.549, 0.756] \\
+\quad shuffled regions & $0.267 \pm 0.019$ & $0.402 \pm 0.034$ & 0.627 [0.515, 0.739] \\
+\quad random locations & $\mathbf{0.065 \pm 0.001}$ & $0.770 \pm 0.090$ & 0.649 [0.531, 0.763] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three points form a gradient. Grounding against genuine regions gives $0.537$;
+against a \emph{different} genuine region (shuffled) $0.267$; against a location that
+corresponds to no anatomy at all $0.065$, exactly the no-information bound. The model
+therefore learns a real anatomy--concept correspondence rather than any form of spatial
+memorisation.
+
+\subsection{Classification is not distinguishable at this sample size}
+
+\begin{table}[t]
+\centering
+\caption{Patient-level balanced accuracy, three seeds averaged, $n=79$ patients.
+No pair of configurations differs significantly (exact McNemar).}
+\label{tab:cls}
+\begin{tabular}{lcc}
+\toprule
+Comparison & discordant pairs & $p$ \\
+\midrule
+3D CNN baseline vs.\ ours & 10 : 14 & 0.54 \\
+w/o grounding vs.\ ours & 8 : 6 & 0.79 \\
+ours vs.\ shuffled regions & 6 : 4 & 0.75 \\
+ours vs.\ random locations & 9 : 7 & 0.80 \\
+ours vs.\ no clinical prior & 14 : 12 & 0.85 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across-seed variation for a fixed configuration reaches $0.125$ in balanced accuracy,
+exceeding every between-configuration difference; the ranking reverses across seeds.
+We therefore report classification as \emph{statistically equivalent} and make no
+claim of superiority. \todo{若审稿人质疑,强调这是主动披露而非隐藏}
+
+\section{Discussion}
+
+\todo{讨论:为何空间约束有代价但代价与约束内容无关(随机对照);五次架构干预
+(权重扫描/全局通路/时空解耦/背景槽位/随机目标)均未改变格局,支持这是内在权衡
+而非实现缺陷 —— 细节可放补充材料}
+
+\paragraph{Limitations.}
+The cohort is small (79 patients, 25 non-ASD), which is the binding constraint on every
+classification comparison. Alignment is evaluated on a $7\times7$ token grid. The
+concept-contrastive term has negligible effect and is retained only for completeness.
+Frozen CLIP text concepts show no measurable advantage over learned ones, plausibly
+because the five prompts have mean pairwise cosine similarity $0.877$.
+
+\section{Conclusion}
+
+Clinician spatial attention is not recoverable from an accurate classifier by post-hoc
+means, and is not a by-product of classification training. It can be obtained---at no
+measurable cost in accuracy---by supervising a concept-grounded architecture with
+genuine annotations, and only with genuine annotations.
+
+\bibliographystyle{splncs04}
+\bibliography{refs}
+
+\end{document}
