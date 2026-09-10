@@ -37,7 +37,7 @@ for fold in ${FOLDS}; do
         echo "== ${w} fold ${fold} $(date '+%F %T')"
         python "${script}" --root-path "${DATA_ROOT}" --model "${MODEL}" --img-size "${IMG_SIZE}" \
             --dtype "${DTYPE}" --fold "${fold}" --limit "${LIMIT}" \
-            --out "logs/qwen_analysis/${w}_${tag}_fold${fold}.json" 2>&1 | grep -vE "Warning|warn"
+            --out "logs/qwen_analysis/${w}_${tag}_fold${fold}.json" 2>&1 | grep --line-buffered -vE "Warning|warn"
     done
 done
 echo "[done] $(date '+%F %T')"
