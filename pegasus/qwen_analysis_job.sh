@@ -18,7 +18,7 @@ MODEL="${MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
 IMG_SIZE="${IMG_SIZE:-448}"
 DTYPE="${DTYPE:-float32}"
 WHICH="${WHICH:-attn diag}"
-FOLDS="${FOLDS:-0}"
+FOLDS="${FOLDS:-0}"; FOLDS="${FOLDS//[,.]/ }"   # qsub -v 里逗号是变量分隔符, 折号用点号: FOLDS=1.2.3.4
 LIMIT="${LIMIT:-0}"
 
 cd "${REPO_ROOT}"
