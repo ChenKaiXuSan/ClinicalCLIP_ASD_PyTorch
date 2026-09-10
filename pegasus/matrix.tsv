@@ -104,3 +104,6 @@ qwen_scale	Q0_qwen2b_probe_generic	model.backbone=vlm_probe model.token_backbone
 qwen_scale	Q0b_qwen2b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_2b_448_clinical
 qwen_scale	Q0_qwen4b_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_4b_448_generic
 qwen_scale	Q0b_qwen4b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_4b_448_clinical
+# 32B 只能 bf16(GPU 上 bf16 与 fp32 一致,见 tests/check_qwen_batch.py)
+qwen_scale	Q0_qwen32b_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_32b_448_generic
+qwen_scale	Q0b_qwen32b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical

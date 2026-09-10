@@ -10,8 +10,11 @@
     sdpa  float32   batch2 vs single: 0.0000 / 0.0000   -> 批处理逻辑正确
     sdpa  bfloat16  batch2 vs single: 0.2255 / 0.1671
     eager bfloat16  batch2 vs single: 0.2054 / 0.2247   -> 与注意力实现无关,是 bf16 经 28 层累积的误差
-所以离线抽特征默认 fp32(pegasus/extract_job.sh DTYPE)。GPU 上 bf16 用 fp32 累加会好得多,
-本脚本在 GPU 上的输出决定要不要改回 bf16(阈值:相对差 < 0.01)。
+2026-09-10 H100 PCIe 实测(8B @448, pegasus/gpu_check_job.sh):
+    sdpa  bfloat16  batch2 vs single: 0.0000 / 0.0000   峰值显存 16.9 GB
+    sdpa  float32   batch2 vs single: 0.0000 / 0.0000   峰值显存 34.0 GB, 2 段前向 1.7 s
+-> CPU 上的 20% 是 oneDNN bf16 的问题,GPU 上 bf16 与 fp32 一致。fp32 缓存不必重做;
+   32B(bf16 权重 64 GB)可以在 H100 上抽,用 DTYPE=bfloat16。
 """
 import sys
 import time

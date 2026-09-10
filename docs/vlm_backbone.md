@@ -143,7 +143,18 @@ python analysis/eval_qwen_attention.py --root-path $DATA --model Qwen/Qwen3-VL-8
 python analysis/eval_qwen_zeroshot_diag.py --root-path $DATA --model Qwen/Qwen3-VL-8B-Instruct --img-size 448 --fold 0
 ```
 
-登录节点每用户内存上限 16GB,只能跑 2B 的冒烟测试(`tests/smoke_qwen.py`,bf16)。
+登录节点每用户内存上限 16GB,只能跑 2B 的冒烟测试(`tests/smoke_qwen.py`,fp32)。
+
+### 精度与尺寸(2026-09-10 实测)
+
+| | CPU(登录节点) | H100 PCIe |
+|---|---|---|
+| bf16 批量 vs 单段相对差 | 0.17 ~ 0.23(oneDNN bf16 经 28 层累积) | **0.0000** |
+| fp32 | 0.0000 | 0.0000,8B @448 峰值显存 34 GB,2 段前向 1.7 s |
+
+GPU 上 bf16 与 fp32 一致,2B/4B/8B 的缓存用 fp32 抽(已在跑),32B 用 bf16(权重 64 GB)。
+尺寸曲线(`qwen_scale` 组)只比探针对 generic vs clinical:2B / 4B / 8B / 32B。
+全库 1890 条视频约 11000 段(不是之前估的 2800),8B @448 每种 prompt 缓存约 70 GB。
 
 ## InternVideo2 后端的准备(未完成)
 
