@@ -117,6 +117,9 @@ def main() -> None:
         "patient_balanced_acc_best_thr": max(bal_acc(t) for t in sorted(set(p_scores))) if p_scores else float("nan"),
         "yes_rate_segments": sum(s > 0 for s in seg_scores) / max(len(seg_scores), 1),
         "note": "分数 = logit(yes) - logit(no);best_thr 是在同一批数据上挑的阈值,只作上界参考",
+        # 逐患者分数:5 折 test 恰好划分全部 79 个患者,拼起来就是患者级的 AUC / 平衡准确率
+        "patients": {p: {"score": sum(v) / len(v), "label": lab_p[p], "n_segments": len(v)}
+                     for p, v in by_p.items()},
     }
     print(json.dumps(result, indent=2, ensure_ascii=False))
     if args.out:
