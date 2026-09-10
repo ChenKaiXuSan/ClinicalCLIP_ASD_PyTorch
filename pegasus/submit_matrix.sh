@@ -20,6 +20,11 @@ set -euo pipefail
 REPO_ROOT="${CLINICALCLIP_REPO_ROOT:-/work/SKIING/chenkaixu/code/ClinicalCLIP_ASD_PyTorch}"
 DATA_ROOT="${CLINICALCLIP_DATA_ROOT:-/work/SKIING/chenkaixu/data/asd_dataset}"
 EMB="${EMB:-${DATA_ROOT}/concepts/clip_vit_b32.pt}"
+# VLM 组(matrix.tsv 的 vlm / vlm_ft 分组):SigLIP 2 文本塔的概念向量与离线特征缓存,
+# 由 pegasus/prepare_vlm.sh(登录节点)+ pegasus/extract_job.sh(GPU 节点)生成
+VLM_TAG="${VLM_TAG:-siglip2_so400m_224}"
+EMB_VLM="${EMB_VLM:-${DATA_ROOT}/concepts/${VLM_TAG}.pt}"
+CACHE="${CACHE:-${DATA_ROOT}/vlm_cache/${VLM_TAG}}"
 
 GROUP="${GROUP:-all}"        # 逗号分隔,对应 matrix.tsv 第一列;all 表示全部
 # 按实验名精确挑选,逗号分隔。分组是按用途划的,而跨组挑几个配置(比如只给承载论点
@@ -104,14 +109,32 @@ want_name() {
 # ---- 读矩阵 ----
 declare -a NAMES=() ARGSS=()
 needs_emb=0
+needs_vlm=0
 while IFS=$'\t' read -r grp name args; do
     [[ -z "${grp:-}" || "${grp}" == \#* ]] && continue
     want_group "${grp}" || continue
     want_name "${name}" || continue
+    # EMB_VLM / CACHE 先替换,否则 "EMB" 的子串替换会把 EMB_VLM 弄坏
+    [[ "${args}" == *EMB_VLM* || "${args}" == *CACHE* ]] && needs_vlm=1
+    args="${args//EMB_VLM/${EMB_VLM}}"
+    args="${args//CACHE/${CACHE}}"
     [[ "${args}" == *EMB* ]] && needs_emb=1
     NAMES+=("${name}")
     ARGSS+=("${args//EMB/${EMB}}")
 done < pegasus/matrix.tsv
+
+if (( needs_vlm == 1 )); then
+    if [[ ! -f "${EMB_VLM}" ]]; then
+        echo "ERROR: VLM 组需要 SigLIP 2 文本概念向量,但 ${EMB_VLM} 不存在。" >&2
+        echo "       在**登录节点**跑: bash pegasus/prepare_vlm.sh" >&2
+        exit 1
+    fi
+    if [[ ! -f "${CACHE}/manifest.json" ]]; then
+        echo "ERROR: VLM 组需要离线特征缓存,但 ${CACHE}/manifest.json 不存在。" >&2
+        echo "       先提交抽特征作业: qsub pegasus/extract_job.sh(约 1 小时)" >&2
+        exit 1
+    fi
+fi
 
 if (( ${#NAMES[@]} == 0 )); then
     echo "ERROR: GROUP=${GROUP} ONLY=${ONLY:-<无>} 没有匹配到任何实验" >&2

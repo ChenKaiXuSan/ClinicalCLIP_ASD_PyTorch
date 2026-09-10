@@ -35,7 +35,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .clip_align import ResNet3DTokenEncoder
+from .clip_align import ResNet3DTokenEncoder  # noqa: F401  (旧 checkpoint 反序列化仍会引用)
+from .vlm_encoder import VLMTokenEncoder, build_token_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +163,10 @@ class ClinicalConceptNet(nn.Module):
         self.embed_dim = int(getattr(cfg, "concept_embed_dim", 256))
         self.num_regions = len(REGIONS)
 
-        self.backbone = ResNet3DTokenEncoder(
-            in_channels=3,
-            hidden_dim=self.embed_dim,
-            backbone_depth=int(getattr(cfg, "clip_backbone_depth", 50)),
-            pretrained=bool(getattr(cfg, "clip_backbone_pretrained", True)),
-        )
+        # token 编码器:resnet3d(slow_r50,既有行为)或 vlm(冻结的 VLM 视觉塔)。
+        # 后面的概念交叉注意力只依赖 (B, d, T', h, w) 这个形状,与 backbone 无关。
+        self.backbone = build_token_encoder(cfg, hidden_dim=self.embed_dim)
+        self.accepts_cached_tokens = isinstance(self.backbone, VLMTokenEncoder)
 
         self.concepts = ConceptBank(
             num_regions=self.num_regions,
@@ -219,8 +218,22 @@ class ClinicalConceptNet(nn.Module):
             nn.Linear(self.embed_dim + global_dim, self.num_classes),
         )
 
-    def forward(self, video: torch.Tensor) -> dict[str, torch.Tensor]:
-        if self.global_from_raw:
+    def forward(
+        self,
+        video: Optional[torch.Tensor] = None,
+        raw_tokens: Optional[torch.Tensor] = None,
+    ) -> dict[str, torch.Tensor]:
+        """video (B,3,T,H,W);或 raw_tokens (B,token_dim,T',h,w) —— 离线缓存的 VLM
+        特征,跳过视觉塔。缓存只对 vlm backbone 有意义。"""
+        if raw_tokens is not None:
+            if not self.accepts_cached_tokens:
+                raise ValueError("缓存 token 只能配 model.token_backbone=vlm 使用")
+            tokens, raw_tokens = self.backbone(
+                None, return_raw=True, raw_tokens=raw_tokens
+            )
+            if not self.global_from_raw:
+                raw_tokens = None
+        elif self.global_from_raw:
             tokens, raw_tokens = self.backbone(video, return_raw=True)
         else:
             tokens, raw_tokens = self.backbone(video), None

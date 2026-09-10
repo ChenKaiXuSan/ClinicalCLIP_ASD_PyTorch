@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
@@ -141,6 +142,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         region_map_size: int = 28,
         return_pose: bool = False,
         return_video: bool = True,
+        feature_cache_dir: str = "",
     ) -> None:
         super().__init__()
 
@@ -148,6 +150,10 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         self._experiment = experiment
         self._img_size = img_size
         self._num_samples = num_samples
+        # 离线 VLM 特征缓存:<dir>/<video_name>.pt 存 (n_chunks, d, T, h, w) 的 fp16 token。
+        # 命中时不解码像素、不生成 attn_map,只返回 tokens + region 监督;
+        # 帧采样计划只依赖总帧数与 fps,与抽特征时完全一致
+        self._feature_cache_dir = feature_cache_dir
         # 概念架构走 grounding 监督:按区域拆开的低分辨率图 + 区域软标签
         self._region_supervision = region_supervision
         self._region_map_size = region_map_size
@@ -180,9 +186,23 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         video_name = file_info_dict["video_name"]
         video_path = self._resolve_video_path(json_path, file_info_dict["video_path"])
 
+        cached = None
+        if self._feature_cache_dir:
+            cache_path = os.path.join(self._feature_cache_dir, f"{video_name}.pt")
+            if os.path.isfile(cache_path):
+                cached = torch.load(cache_path, map_location="cpu")
+            else:
+                raise FileNotFoundError(
+                    f"特征缓存缺失 {cache_path};先跑 scripts/extract_vlm_features.py,"
+                    "或把 data.feature_cache_dir 置空改为在线编码"
+                )
+
         total, fps = _probe(video_path)
         frames = None
-        if total <= 0 or fps <= 0:
+        if cached is not None:
+            plan = _plan_frame_index(total, max(int(fps), 1), self._num_samples)
+            wanted, inverse = torch.unique(plan.flatten(), return_inverse=True)
+        elif total <= 0 or fps <= 0:
             # 容器没写帧数时退回全解码
             vframes, _, info = read_video(video_path, output_format="TCHW")
             total, fps = vframes.shape[0], float(info["video_fps"] or 30.0)
@@ -221,6 +241,15 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
             # 段数,供 collate 在没有 video 时也能展开视频级标签
             "num_chunks": n_chunks,
         }
+
+        if cached is not None:
+            tokens = cached["tokens"] if isinstance(cached, dict) else cached
+            if tokens.shape[0] != n_chunks:
+                raise RuntimeError(
+                    f"{video_name}: 缓存有 {tokens.shape[0]} 段,采样计划是 {n_chunks} 段;"
+                    "num_samples 或视频文件与抽特征时不一致,请重新抽取"
+                )
+            sample["tokens"] = tokens
 
         if video is not None:
             sample["video"] = video
@@ -279,8 +308,10 @@ def whole_video_dataset(
     return_pose: bool = False,
     return_video: bool = True,
     clip_duration: int = 1,
+    feature_cache_dir: str = "",
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
+        feature_cache_dir=feature_cache_dir,
         experiment=experiment,
         labeled_video_paths=dataset_idx,
         img_size=img_size,

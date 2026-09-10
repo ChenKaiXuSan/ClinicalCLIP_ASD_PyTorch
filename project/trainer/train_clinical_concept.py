@@ -91,8 +91,17 @@ class ClinicalConceptModule(LightningModule):
 
         self.save_root = hparams.log_path
 
-    def forward(self, video: torch.Tensor) -> Dict[str, torch.Tensor]:
-        return self.model(video)
+    def forward(self, video=None, raw_tokens=None) -> Dict[str, torch.Tensor]:
+        return self.model(video, raw_tokens=raw_tokens)
+
+    def _model_inputs(self, batch) -> dict:
+        """在线编码给 video;离线缓存命中时 batch 里只有 tokens。"""
+        video = batch.get("video")
+        tokens = batch.get("tokens")
+        return {
+            "video": video.detach() if video is not None else None,
+            "raw_tokens": tokens.detach() if tokens is not None else None,
+        }
 
     def _maybe_shuffle(self, region_map, region_target):
         """消融:沿区域维度逐样本置换,等价于"同一副骨架、换一个区域"。
@@ -148,7 +157,7 @@ class ClinicalConceptModule(LightningModule):
         return out.gather(-1, ci)
 
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
-        video = batch["video"].detach()
+        inputs = self._model_inputs(batch)
         label = batch["label"].detach().long()
         region_map = batch.get("region_map")
         region_target = batch.get("region_target")
@@ -158,7 +167,7 @@ class ClinicalConceptModule(LightningModule):
         region_map, region_target = self._maybe_shuffle(region_map, region_target)
         region_map = self._maybe_randomize(region_map, region_target)
 
-        outputs = self.model(video)
+        outputs = self.model(**inputs)
         logits = outputs["logits"]
 
         cls_loss = F.cross_entropy(logits, label)
@@ -255,12 +264,12 @@ class ClinicalConceptModule(LightningModule):
         )
 
     def test_step(self, batch, batch_idx):
-        video = batch["video"].detach()
+        inputs = self._model_inputs(batch)
         label = batch["label"].detach().long()
         region_map = batch.get("region_map")
         region_target = batch.get("region_target")
 
-        outputs = self.model(video)
+        outputs = self.model(**inputs)
         logits = outputs["logits"]
         probs = torch.softmax(logits, dim=1)
 

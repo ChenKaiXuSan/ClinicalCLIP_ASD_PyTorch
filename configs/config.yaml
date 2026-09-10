@@ -40,6 +40,11 @@ data:
 
   batch_size: 1 # batch size per GPU
 
+  # 离线 VLM 特征缓存目录(<dir>/<video_name>.pt),由 scripts/extract_vlm_features.py 生成。
+  # 非空时 dataset 不解码像素、直接返回 tokens,训练从小时级降到分钟级。
+  # 必须与 model.vlm_backend / vlm_name / vlm_img_size / uniform_temporal_subsample_num 一致。
+  feature_cache_dir: null
+
 model:
   backbone: "clip"
   model: "resnet" # 仅 3dcnn/2dcnn/cnn_lstm 基线经 make_model 使用
@@ -95,6 +100,20 @@ model:
 
   # ---- pose-only baseline (backbone=pose) ----
   pose_hidden_dim: 64
+
+  # ---- VLM token 编码器 (concept 架构的 backbone 可选项, 以及 backbone=vlm_probe) ----
+  # resnet3d: slow_r50(既有行为) | vlm: 冻结的 VLM 视觉塔,见 models/vlm_encoder.py
+  token_backbone: "resnet3d"
+  vlm_backend: "siglip2" # siglip2 | internvideo2
+  vlm_name: "google/siglip2-so400m-patch16-384" # HF 模型名,或 internvideo2 的本地权重路径
+  # 送入视觉塔的边长;空则用模型原生尺寸。dataset 输出 data.img_size,编码器内部再缩放
+  vlm_img_size: null
+  # 0 = 全部冻结(V0/V1);N>0 = 只解冻最后 N 个 block(V3)
+  vlm_trainable_blocks: 0
+  # 冻结前向的分块帧数,控制显存(一条视频最多 28 段 x 8 帧)
+  vlm_forward_chunk: 64
+  # vlm_probe:token 池化方式 mean | attn(可学习 query 的注意力池化)
+  probe_pool: "mean"
 
 train:
   # Training config

@@ -4,6 +4,8 @@
 #
 # 说明:
 # - EMB 会被脚本替换成 CLIP 文本概念向量的路径
+# - EMB_VLM 替换成 VLM(SigLIP 2)文本塔的概念向量,CACHE 替换成离线 VLM 特征目录
+#   (两者由 pegasus/prepare_vlm.sh + extract_job.sh 生成)
 # - 所有实验共用 loss.lr=1e-4(config 默认),避免对比被不同学习率混淆
 # - pose 基线不解码视频,数据加载快约 12 倍
 
@@ -63,3 +65,19 @@ arch	G2_background	model.backbone=concept model.concept_background=true
 # 分类掉得一样多 => 代价来自空间约束本身, 不能归因于临床对齐;掉得更多或对齐上不去
 # => 医生选的位置是特殊的。这一格决定论文能否把代价说成临床对齐的固有成本。
 arch	G3_random_map	model.backbone=concept model.random_region_map=true
+
+# ============ VLM backbone:冻结的 SigLIP 2 视觉塔换掉 slow_r50 ============
+# 动机(docs/vlm_backbone.md):findings.md 确认瓶颈是训练方差(跨种子 0.125)而非架构;
+# 冻结视觉塔 + 少量可训练参数直接攻击这一点。同时概念 prompt 改由同一 VLM 的文本塔
+# 编码,概念与 token 才真正同空间(M1 的 CLIP-B/32 文本配 slow_r50 视觉不是)。
+# 全部走离线特征缓存 CACHE,单次实验分钟级,三种子方差实验才跑得起。
+# V0:冻结特征 + 线性头,无任何先验。VLM 特征够不够、方差是否更小 —— 决定这条线值不值得做
+vlm	V0_vlm_probe	model.backbone=vlm_probe model.token_backbone=vlm data.feature_cache_dir=CACHE
+# V1:concept 架构 + 冻结 VLM token + 同一 VLM 的文本概念(医生先验用法与 M1 完全相同)
+vlm	V1_vlm_concept	model.backbone=concept model.token_backbone=vlm model.concept_text_embedding=EMB_VLM data.feature_cache_dir=CACHE
+# V1 的可学习概念版,对应 M0;与 V1 对比回答"同空间文本概念有没有用"
+vlm	V1b_vlm_concept_learned	model.backbone=concept model.token_backbone=vlm data.feature_cache_dir=CACHE
+# V1 去掉全部先验,对应 A4;与 V1 对比回答"换了 backbone 之后先验有没有收益"
+vlm	V1c_vlm_no_prior	model.backbone=concept model.token_backbone=vlm model.concept_text_embedding=EMB_VLM data.feature_cache_dir=CACHE loss.grounding_weight=0 loss.presence_weight=0
+# V3:解冻最后 4 个 block(不能用缓存,在线编码,耗时与 concept 系列同量级;精度由提交脚本的 PRECISION 统一给)
+vlm_ft	V3_vlm_ft4	model.backbone=concept model.token_backbone=vlm model.concept_text_embedding=EMB_VLM model.vlm_trainable_blocks=4 model.vlm_img_size=224

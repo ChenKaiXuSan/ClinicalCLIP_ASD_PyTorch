@@ -43,6 +43,24 @@ def encode_clip(model_name: str, prompts: list[str]) -> torch.Tensor:
     return out.pooler_output.float()
 
 
+def encode_siglip(model_name: str, prompts: list[str]) -> torch.Tensor:
+    """SigLIP / SigLIP 2 文本塔。与 models/vlm_encoder.py 的视觉 token 同一个模型,
+    概念向量与视频 token 才真正落在同一空间(M1 的 CLIP-B/32 文本配 slow_r50 视觉并不是)。
+    SigLIP 训练时文本固定 pad 到 64 token,推理保持一致。"""
+    from transformers import AutoModel, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).eval()
+
+    batch = tokenizer(
+        prompts, padding="max_length", max_length=64, truncation=True, return_tensors="pt"
+    )
+    with torch.no_grad():
+        out = model.text_model(**batch)
+    # pooler_output 已过 head,是与图像 embedding 对齐的那一层
+    return out.pooler_output.float()
+
+
 def encode_bert(model_name: str, prompts: list[str]) -> torch.Tensor:
     from transformers import AutoModel, AutoTokenizer
 
@@ -63,13 +81,16 @@ def main() -> None:
     parser.add_argument("--model", default="openai/clip-vit-base-patch32")
     parser.add_argument("--output", required=True)
     parser.add_argument(
-        "--encoder", choices=["clip", "bert"], default=None,
-        help="留空则按模型名自动判断",
+        "--encoder", choices=["clip", "siglip", "bert"], default=None,
+        help="留空则按模型名自动判断。internvideo2 的文本塔是 BERT-large,用 bert",
     )
     args = parser.parse_args()
 
-    kind = args.encoder or ("clip" if "clip" in args.model.lower() else "bert")
-    encode = encode_clip if kind == "clip" else encode_bert
+    lower = args.model.lower()
+    kind = args.encoder or (
+        "siglip" if "siglip" in lower else "clip" if "clip" in lower else "bert"
+    )
+    encode = {"clip": encode_clip, "siglip": encode_siglip, "bert": encode_bert}[kind]
 
     print(f"编码器 {kind} / 模型 {args.model}")
     for region, prompt in zip(REGIONS, CONCEPT_PROMPTS):

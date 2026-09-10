@@ -49,6 +49,9 @@ from trainer.train_clinical_concept import ClinicalConceptModule
 # pose-only baseline
 from trainer.train_pose import PoseModule
 
+# 冻结 VLM 特征 + 线性头,无任何临床先验
+from trainer.train_vlm_probe import VLMProbeModule
+
 # compare experiment
 from trainer.train_cnn import CNNModule
 
@@ -92,6 +95,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * 纯姿态基线:注意力图源自骨架,必须回答"只用姿态够不够"
     elif hparams.model.backbone == "pose":
         classification_module = PoseModule(hparams)
+    # * V0:冻结 VLM 特征 + 线性探针。回答"VLM 特征本身够不够、方差是否更小"
+    elif hparams.model.backbone == "vlm_probe":
+        classification_module = VLMProbeModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")

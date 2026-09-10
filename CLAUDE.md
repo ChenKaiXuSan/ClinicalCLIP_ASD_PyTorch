@@ -116,3 +116,17 @@ train/val。**val 只用来选 checkpoint,test 只用来报指标。**
 - `train.attn_map=False` 分支不可用:`collate_fn` 依赖 `attn_map` 键;保持默认 `True`。
 - `config.yaml` 的 `model.model: "resnet"` 是残留配置,选择逻辑只看 `model.backbone`。
 - `logs/` 约 40 GB,其中 54 个 `.ckpt` 占几乎全部;指标/CSV/TensorBoard/embeddings 仅 64 MB。
+
+## VLM backbone(分支 feat/vlm-backbone)
+
+`model.token_backbone=vlm` 用冻结的 SigLIP 2 视觉塔替换 concept 架构里的 slow_r50,
+医生注意力的用法不变;`model.backbone=vlm_probe` 是无先验的线性探针。全部细节、
+实验组 V0-V3、Pegasus 执行顺序与 InternVideo2 的准备步骤见 `docs/vlm_backbone.md`。
+
+- 训练前必须先抽离线特征(`scripts/extract_vlm_features.py` / `pegasus/extract_job.sh`),
+  `data.feature_cache_dir` 指向缓存目录后 dataset 不再解码视频;缓存与
+  `vlm_name / vlm_img_size / uniform_temporal_subsample_num` 绑定,换任一项要重抽。
+- 概念向量用 `build_concept_embedding.py --encoder siglip` 从同一 VLM 的文本塔生成,
+  提交脚本里占位符 `EMB_VLM`(默认 `concepts/siglip2_so400m_224.pt`)与 `CACHE`。
+- 计算节点无外网:权重先在登录节点用 `pegasus/prepare_vlm.sh` 下到 HF_HOME。
+- 形状级冒烟测试:`tests/smoke_vlm.py`(CPU 可跑)。
