@@ -109,31 +109,42 @@ want_name() {
 # ---- 读矩阵 ----
 declare -a NAMES=() ARGSS=()
 needs_emb=0
-needs_vlm=0
+needs_emb_vlm=0
+needs_cache=0
 while IFS=$'\t' read -r grp name args; do
     [[ -z "${grp:-}" || "${grp}" == \#* ]] && continue
     want_group "${grp}" || continue
     want_name "${name}" || continue
     # EMB_VLM / CACHE 先替换,否则 "EMB" 的子串替换会把 EMB_VLM 弄坏
-    [[ "${args}" == *EMB_VLM* || "${args}" == *CACHE* ]] && needs_vlm=1
+    [[ "${args}" == *EMB_VLM* ]] && needs_emb_vlm=1
     args="${args//EMB_VLM/${EMB_VLM}}"
+    # CACHE:<tag> -> $DATA_ROOT/vlm_cache/<tag>(qwen 组按 prompt 分目录);裸 CACHE -> 默认目录
+    while [[ "${args}" =~ CACHE:([A-Za-z0-9_.-]+) ]]; do
+        tag="${BASH_REMATCH[1]}"
+        cache_dir="${DATA_ROOT}/vlm_cache/${tag}"
+        if [[ ! -f "${cache_dir}/manifest.json" ]]; then
+            echo "ERROR: ${name} 需要特征缓存 ${cache_dir},但 manifest.json 不存在。" >&2
+            echo "       先提交: qsub -v VLM_TAG=${tag},... pegasus/extract_job.sh(见 docs/vlm_backbone.md)" >&2
+            exit 1
+        fi
+        args="${args//CACHE:${tag}/${cache_dir}}"
+    done
+    [[ "${args}" == *CACHE* ]] && needs_cache=1
     args="${args//CACHE/${CACHE}}"
     [[ "${args}" == *EMB* ]] && needs_emb=1
     NAMES+=("${name}")
     ARGSS+=("${args//EMB/${EMB}}")
 done < pegasus/matrix.tsv
 
-if (( needs_vlm == 1 )); then
-    if [[ ! -f "${EMB_VLM}" ]]; then
-        echo "ERROR: VLM 组需要 SigLIP 2 文本概念向量,但 ${EMB_VLM} 不存在。" >&2
-        echo "       在**登录节点**跑: bash pegasus/prepare_vlm.sh" >&2
-        exit 1
-    fi
-    if [[ ! -f "${CACHE}/manifest.json" ]]; then
-        echo "ERROR: VLM 组需要离线特征缓存,但 ${CACHE}/manifest.json 不存在。" >&2
-        echo "       先提交抽特征作业: qsub pegasus/extract_job.sh(约 1 小时)" >&2
-        exit 1
-    fi
+if (( needs_emb_vlm == 1 )) && [[ ! -f "${EMB_VLM}" ]]; then
+    echo "ERROR: 需要 SigLIP 2 文本概念向量,但 ${EMB_VLM} 不存在。" >&2
+    echo "       在**登录节点**跑: bash pegasus/prepare_vlm.sh" >&2
+    exit 1
+fi
+if (( needs_cache == 1 )) && [[ ! -f "${CACHE}/manifest.json" ]]; then
+    echo "ERROR: 需要离线特征缓存,但 ${CACHE}/manifest.json 不存在。" >&2
+    echo "       先提交抽特征作业: qsub pegasus/extract_job.sh(约 1 小时)" >&2
+    exit 1
 fi
 
 if (( ${#NAMES[@]} == 0 )); then

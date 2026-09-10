@@ -161,10 +161,13 @@ class WalkDataModule(LightningDataModule):
         batch_region_target = []
         batch_pose = []
         batch_tokens = []
+        batch_pooled = []
 
         for i in batch:
             if "tokens" in i:
                 batch_tokens.append(i["tokens"])
+            if "pooled" in i:
+                batch_pooled.append(i["pooled"])
             # 姿态基线不解码视频,段数从 dataset 直接带过来
             gait_num = i["num_chunks"]
             disease = i["disease"]
@@ -206,7 +209,7 @@ class WalkDataModule(LightningDataModule):
                 {
                     k: v
                     for k, v in i.items()
-                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens")
+                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens", "pooled")
                 }
                 for i in batch
             ],
@@ -218,6 +221,8 @@ class WalkDataModule(LightningDataModule):
 
         if batch_tokens:
             out["tokens"] = torch.cat(batch_tokens, dim=0)
+        if batch_pooled:
+            out["pooled"] = torch.cat(batch_pooled, dim=0)
 
         if batch_region_map:
             out["region_map"] = torch.cat(batch_region_map, dim=0)

@@ -250,6 +250,8 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
                     "num_samples 或视频文件与抽特征时不一致,请重新抽取"
                 )
             sample["tokens"] = tokens
+            if isinstance(cached, dict) and "pooled" in cached:
+                sample["pooled"] = cached["pooled"]
 
         if video is not None:
             sample["video"] = video

@@ -130,3 +130,7 @@ train/val。**val 只用来选 checkpoint,test 只用来报指标。**
   提交脚本里占位符 `EMB_VLM`(默认 `concepts/siglip2_so400m_224.pt`)与 `CACHE`。
 - 计算节点无外网:权重先在登录节点用 `pegasus/prepare_vlm.sh` 下到 HF_HOME。
 - 形状级冒烟测试:`tests/smoke_vlm.py`(CPU 可跑)。
+- 生成式 VLM:`model.vlm_backend=qwen3vl`,医生关注区域以**指令**进入(`models/vlm_prompts.py`),
+  指令必须在视频之前、且患者无关;缓存按 prompt 分目录(`CACHE:<tag>`),训练时不加载 8B 模型。
+  矩阵 `qwen` 组;不训练的注意力分析与零样本诊断在 `analysis/eval_qwen_*.py`。
+  登录节点每用户内存 16GB,只能跑 2B 冒烟(`tests/smoke_qwen.py`)。

@@ -165,7 +165,9 @@ class ClinicalConceptNet(nn.Module):
 
         # token 编码器:resnet3d(slow_r50,既有行为)或 vlm(冻结的 VLM 视觉塔)。
         # 后面的概念交叉注意力只依赖 (B, d, T', h, w) 这个形状,与 backbone 无关。
-        self.backbone = build_token_encoder(cfg, hidden_dim=self.embed_dim)
+        self.backbone = build_token_encoder(
+            cfg, hidden_dim=self.embed_dim, data_cfg=getattr(hparams, "data", None)
+        )
         self.accepts_cached_tokens = isinstance(self.backbone, VLMTokenEncoder)
 
         self.concepts = ConceptBank(

@@ -67,9 +67,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root-path", required=True)
     parser.add_argument("--class-num", type=int, default=2)
-    parser.add_argument("--backend", default="siglip2", choices=["siglip2", "internvideo2"])
+    parser.add_argument("--backend", default="siglip2", choices=["siglip2", "internvideo2", "qwen3vl"])
     parser.add_argument("--model", default="google/siglip2-so400m-patch16-384")
     parser.add_argument("--img-size", type=int, default=224, help="送入视觉塔的边长")
+    parser.add_argument("--prompt", default="generic",
+                        help="qwen3vl 的指令:models/vlm_prompts.py 里的预设名或原文。缓存目录应含 prompt 名")
+    parser.add_argument("--layer", type=int, default=-1, help="qwen3vl 取第几层隐状态,-1 为末层")
+    parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"],
+                        help="qwen3vl 权重精度。bf16 经 28 层累积后隐状态相对误差可达 20%%(tests/check_qwen_batch.py),"
+                             "H100 80GB 放得下 8B 的 fp32(32GB),默认 fp32")
     parser.add_argument("--num-samples", type=int, default=8, help="= train.uniform_temporal_subsample_num")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--device", default="cuda:0")
@@ -97,12 +103,19 @@ def main() -> None:
     encoder = VLMTokenEncoder(
         backend=args.backend, model_name=args.model, hidden_dim=256,
         img_size=args.img_size, trainable_blocks=0, forward_chunk=args.chunk,
+        prompt=args.prompt, layer=args.layer, dtype=args.dtype,
     ).to(device).eval()
+
+    from models.vlm_prompts import get_prompt
 
     manifest = {
         "backend": args.backend, "model": args.model, "img_size": args.img_size,
         "num_samples": args.num_samples, "grid": encoder.grid, "token_dim": encoder.token_dim,
         "dtype": "float16",
+        "prompt_name": args.prompt if args.backend == "qwen3vl" else None,
+        "prompt": get_prompt(args.prompt) if args.backend == "qwen3vl" else None,
+        "layer": args.layer,
+        "weights_dtype": args.dtype if args.backend == "qwen3vl" else "float32+fp16 autocast",
     }
     json.dump(manifest, open(out_dir / "manifest.json", "w"), indent=2, ensure_ascii=False)
 
@@ -122,13 +135,21 @@ def main() -> None:
     t0 = time.time()
     n_done = 0
     n_chunks_total = 0
-    with torch.no_grad(), torch.autocast(device.type, dtype=torch.float16, enabled=device.type == "cuda"):
+    # siglip2 用 fp16 autocast 加速;qwen3vl 精度由 --dtype 决定,不再 autocast
+    use_autocast = device.type == "cuda" and args.backend == "siglip2"
+    with torch.no_grad(), torch.autocast(device.type, dtype=torch.float16, enabled=use_autocast):
         for items in loader:
             sample = items[0]
             video = sample["video"].to(device, non_blocking=True)
-            tokens = encoder.encode_raw(video).to(torch.float16).cpu()
+            tokens, pooled = encoder.encode_with_pooled(video)
+            tokens = tokens.to(torch.float16).cpu()
             torch.save(
-                {"tokens": tokens, "video_name": sample["video_name"], "label": sample["label"]},
+                {
+                    "tokens": tokens,
+                    # qwen3vl:回答位置的隐状态(看得到视频与指令);其它后端为 token 均值
+                    "pooled": pooled.to(torch.float16).cpu(),
+                    "video_name": sample["video_name"], "label": sample["label"],
+                },
                 out_dir / f"{sample['video_name']}.pt",
             )
             n_done += 1

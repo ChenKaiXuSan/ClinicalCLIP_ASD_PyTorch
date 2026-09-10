@@ -81,3 +81,18 @@ vlm	V1b_vlm_concept_learned	model.backbone=concept model.token_backbone=vlm data
 vlm	V1c_vlm_no_prior	model.backbone=concept model.token_backbone=vlm model.concept_text_embedding=EMB_VLM data.feature_cache_dir=CACHE loss.grounding_weight=0 loss.presence_weight=0
 # V3:解冻最后 4 个 block(不能用缓存,在线编码,耗时与 concept 系列同量级;精度由提交脚本的 PRECISION 统一给)
 vlm_ft	V3_vlm_ft4	model.backbone=concept model.token_backbone=vlm model.concept_text_embedding=EMB_VLM model.vlm_trainable_blocks=4 model.vlm_img_size=224
+
+# ============ 生成式 VLM(Qwen3-VL):医生关注区域以指令进入 ============
+# 与 SigLIP 的本质区别:视频 token 取语言模型隐状态,已被前置指令调制(models/vlm_prompts.py)。
+# 缓存按 (模型, prompt) 分目录,占位符 CACHE:<tag> -> $DATA_ROOT/vlm_cache/<tag>。
+# Q0 对:同一模型、同一探针,只差 prompt 有没有临床引导 —— 最干净的"文本先验"消融
+qwen	Q0_qwen_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_8b_448_generic
+qwen	Q0b_qwen_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical
+# 同一对,改用视频 token 均值而不是回答位置
+qwen	Q0m_qwen_probe_generic_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_generic
+qwen	Q0bm_qwen_probe_clinical_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical
+# Q1:concept 架构 + 指令调制的 token(可学习概念;LLM 隐状态与文本塔向量不同空间,不用 EMB)
+qwen	Q1_qwen_concept_clinical	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical
+qwen	Q1g_qwen_concept_generic	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_generic
+# Q1 去掉热图先验:只剩文本指令这一种先验
+qwen	Q1c_qwen_concept_clinical_no_prior	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical loss.grounding_weight=0 loss.presence_weight=0

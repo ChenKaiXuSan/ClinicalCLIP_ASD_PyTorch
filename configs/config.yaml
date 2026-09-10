@@ -112,8 +112,14 @@ model:
   vlm_trainable_blocks: 0
   # 冻结前向的分块帧数,控制显存(一条视频最多 28 段 x 8 帧)
   vlm_forward_chunk: 64
-  # vlm_probe:token 池化方式 mean | attn(可学习 query 的注意力池化)
+  # vlm_probe:token 池化方式 mean | attn(可学习 query 的注意力池化)| pooled(qwen3vl 回答位置的隐状态)
   probe_pool: "mean"
+  # ---- qwen3vl 后端(生成式 VLM)----
+  # 指令预设名(models/vlm_prompts.py:generic / clinical / region_<r>)或原文。指令在视频之前,
+  # 视频 token 的隐状态被它调制 —— 医生关注区域以文本形式进入。必须是患者无关的
+  vlm_prompt: "generic"
+  # 取语言模型第几层的隐状态作为 token,-1 = 末层
+  vlm_layer: -1
 
 train:
   # Training config

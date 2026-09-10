@@ -84,6 +84,67 @@ GROUP=vlm SEEDS=42,1337,2024 bash pegasus/submit_matrix.sh
 
 `VLM_TAG` / `EMB_VLM` / `CACHE` 环境变量可换模型或缓存目录,占位符在提交时替换。
 
+## 生成式 VLM:Qwen3-VL(`vlm_backend=qwen3vl`)
+
+SigLIP 是双塔,prompt 只能编码成向量做相似度。Qwen3-VL 是带语言模型的生成式 VLM,
+prompt 是真正的指令:**同一段视频,不同指令得到不同的视频 token**。于是医生的关注
+区域可以以**文本指令**进入模型(`models/vlm_prompts.py`),而不是热图 —— 这是与
+ClinicalCLIP 主线本质不同的先验注入方式。
+
+```
+"Focus on the lumbar spine and pelvis ..."  +  视频 8 帧          ← 指令在前,视频在后
+                    │
+        Qwen3-VL(冻结, bf16)语言模型
+                    │
+   视频 token 位置的末层隐状态 → (B, 4096, 4, 14, 14)   [8B @448]   ← 已被指令调制
+   回答位置的隐状态             → (B, 4096)  "pooled"               ← 看得到视频与指令
+                    │
+   concept 交叉注意力 / 探针(不变)
+```
+
+三个关键实现点:
+
+- **指令必须在视频之前**。因果注意力下视频 token 只能看到前文;`_chat_text` 把
+  text 放在 content 列表的 video 之前。`tests/smoke_qwen.py` 的 [3] 检查 clinical 与
+  generic 指令下的 token 确实不同。
+- **指令必须患者无关**。测试患者自己的医生标注绝不能进推理输入,否则是泄漏。
+  预设 `generic`(只说是步态视频)/ `clinical`(按医生标注频率列出关注部位)/
+  `region_<r>`(单区域,注意力分析用)/ `diagnose`(零样本诊断)。
+- **预采样帧要带时间戳**。processor 走 `video_metadata`(fps = T,8 帧铺满 1 秒的
+  gait 段)+ `do_sample_frames=False`;分辨率用 `size` 锁死为 `T×S×S`,S=448 给
+  14×14 token(patch 16 × merge 2 = 32 px/token),temporal patch 2 → t' = 4。
+
+缓存按 (模型, prompt) 分目录,占位符 `CACHE:<tag>`;训练时只读 manifest,
+**不加载 8B 模型**(`VLMTokenEncoder(cache_manifest=...)`)。
+
+### 实验组(`pegasus/matrix.tsv` `qwen`)
+
+| 名称 | 内容 | 回答 |
+|---|---|---|
+| Q0_qwen_probe_generic / Q0b_..._clinical | 回答位置隐状态 + 线性头,只差指令 | **文本先验的干净消融** |
+| Q0m / Q0bm | 同上,视频 token 均值 | 池化方式是否影响 |
+| Q1_qwen_concept_clinical / Q1g_generic | concept 架构 + 指令调制 token(可学习概念) | 热图先验叠在文本先验上还有没有收益 |
+| Q1c | Q1 去掉 grounding + presence | 只剩文本先验 |
+| Q2(不训练) | `analysis/eval_qwen_attention.py` | VLM 被要求看某部位时注意力落在哪;与 M0 0.537 / Grad-CAM 0.135 并排 |
+| Q3(不训练) | `analysis/eval_qwen_zeroshot_diag.py` | 零样本诊断患者级 AUC;预期接近 0.5,必须报 |
+
+Q1 系列不用文本概念向量:LLM 隐状态与任何文本塔向量都不同空间,用可学习概念。
+
+### 执行
+
+```bash
+# 登录节点(已完成):权重在 HF_HOME,Qwen/Qwen3-VL-{2B,8B}-Instruct
+# GPU 节点:每种 prompt 一份缓存,8B @448 约 1.5 小时
+qsub -v BACKEND=qwen3vl,MODEL=Qwen/Qwen3-VL-8B-Instruct,IMG_SIZE=448,PROMPT=generic,VLM_TAG=qwen3vl_8b_448_generic,CHUNK=16 pegasus/extract_job.sh
+qsub -v BACKEND=qwen3vl,MODEL=Qwen/Qwen3-VL-8B-Instruct,IMG_SIZE=448,PROMPT=clinical,VLM_TAG=qwen3vl_8b_448_clinical,CHUNK=16 pegasus/extract_job.sh
+GROUP=qwen FOLDS=0 bash pegasus/submit_matrix.sh
+# 不训练的两项(GPU 节点,eager 注意力)
+python analysis/eval_qwen_attention.py --root-path $DATA --model Qwen/Qwen3-VL-8B-Instruct --img-size 448 --fold 0
+python analysis/eval_qwen_zeroshot_diag.py --root-path $DATA --model Qwen/Qwen3-VL-8B-Instruct --img-size 448 --fold 0
+```
+
+登录节点每用户内存上限 16GB,只能跑 2B 的冒烟测试(`tests/smoke_qwen.py`,bf16)。
+
 ## InternVideo2 后端的准备(未完成)
 
 权重在 HF 上是 gated(`OpenGVLab/InternVideo2-Stage2_1B-224p-f4`,需登录并接受协议),

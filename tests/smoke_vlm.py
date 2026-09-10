@@ -93,6 +93,11 @@ def main() -> None:
     index = json.load(open(info / "index_mapping" / "2" / "index.json"))
     paths = [str(info / "json_mix" / p.split("json_mix/")[-1]) for p in index["0"]["test"][:2]]
     cache_dir = Path(tempfile.mkdtemp())
+    json.dump(
+        {"backend": "siglip2", "model": args.model, "img_size": 224, "num_samples": 8,
+         "grid": grid, "token_dim": enc.token_dim, "dtype": "float16"},
+        open(cache_dir / "manifest.json", "w"),
+    )
     ds = LabeledGaitVideoDataset("smoke", paths, img_size=224, num_samples=8)
     with torch.no_grad():
         for i in range(len(ds)):
@@ -114,6 +119,7 @@ def main() -> None:
     print(f"[4] 缓存 dataset ok: tokens {tuple(batch['tokens'].shape)} region_map {tuple(batch['region_map'].shape)} label {batch['label'].tolist()}")
 
     module = ClinicalConceptModule(cfg)
+    assert module.model.backbone.tower is None, "有缓存时不应加载视觉塔"
     loss = module._shared_step(batch, "train")
     loss.backward()
     grads = [n for n, p in module.named_parameters() if p.grad is not None]

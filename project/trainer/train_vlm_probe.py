@@ -24,7 +24,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 
-from models.vlm_encoder import VLMTokenEncoder
+from models.vlm_encoder import build_token_encoder
 from utils.helper import save_helper
 from utils.metrics import ClassificationMetrics
 
@@ -44,21 +44,18 @@ class VLMProbe(nn.Module):
         cfg = hparams.model
         if str(getattr(cfg, "token_backbone", "vlm")) != "vlm":
             raise ValueError("vlm_probe 只配 model.token_backbone=vlm")
-        self.encoder = VLMTokenEncoder(
-            backend=str(getattr(cfg, "vlm_backend", "siglip2")),
-            model_name=str(getattr(cfg, "vlm_name", "google/siglip2-so400m-patch16-384")),
-            hidden_dim=int(getattr(cfg, "concept_embed_dim", 256)),
-            img_size=getattr(cfg, "vlm_img_size", None),
-            trainable_blocks=int(getattr(cfg, "vlm_trainable_blocks", 0)),
-            forward_chunk=int(getattr(cfg, "vlm_forward_chunk", 64)),
+        # 有离线缓存时 build_token_encoder 走只读模式,不加载视觉塔
+        self.encoder = build_token_encoder(
+            cfg, hidden_dim=int(getattr(cfg, "concept_embed_dim", 256)),
+            data_cfg=getattr(hparams, "data", None),
         )
         d = self.encoder.token_dim
         self.pool = str(getattr(cfg, "probe_pool", "mean"))
         if self.pool == "attn":
             self.query = nn.Parameter(torch.randn(1, d) * 0.02)
             self.key = nn.Linear(d, d, bias=False)
-        elif self.pool != "mean":
-            raise ValueError(f"probe_pool 只能是 mean/attn,收到 {self.pool}")
+        elif self.pool not in ("mean", "pooled"):
+            raise ValueError(f"probe_pool 只能是 mean/attn/pooled,收到 {self.pool}")
         self.head = nn.Sequential(
             nn.LayerNorm(d),
             nn.Linear(d, int(getattr(cfg, "model_class_num", 2))),
@@ -68,8 +65,17 @@ class VLMProbe(nn.Module):
         self,
         video: Optional[torch.Tensor] = None,
         raw_tokens: Optional[torch.Tensor] = None,
+        pooled: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         # 探针直接吃投影前的 token(token_dim 维),token_proj 不用
+        if self.pool == "pooled":
+            # qwen3vl:回答位置的隐状态,看得到视频与指令
+            if pooled is None:
+                if raw_tokens is not None:
+                    pooled = raw_tokens.float().mean(dim=(2, 3, 4))
+                else:
+                    _, pooled = self.encoder.encode_with_pooled(video)
+            return {"logits": self.head(pooled.float()), "attn": None}
         if raw_tokens is None:
             raw_tokens = self.encoder.encode_raw(video)
         raw_tokens = raw_tokens.float()
@@ -99,16 +105,18 @@ class VLMProbeModule(LightningModule):
         self.metrics = ClassificationMetrics(self.num_classes)
         self.save_root = hparams.log_path
 
-    def forward(self, video=None, raw_tokens=None):
-        return self.model(video, raw_tokens=raw_tokens)
+    def forward(self, video=None, raw_tokens=None, pooled=None):
+        return self.model(video, raw_tokens=raw_tokens, pooled=pooled)
 
     @staticmethod
     def _inputs(batch) -> dict:
         video = batch.get("video")
         tokens = batch.get("tokens")
+        pooled = batch.get("pooled")
         return {
             "video": video.detach() if video is not None else None,
             "raw_tokens": tokens.detach() if tokens is not None else None,
+            "pooled": pooled.detach() if pooled is not None else None,
         }
 
     def _shared_step(self, batch, stage: str):

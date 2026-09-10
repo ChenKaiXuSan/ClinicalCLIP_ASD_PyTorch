@@ -24,6 +24,8 @@ Comment:
 
 后端:
   siglip2       transformers 原生(google/siglip2-*),逐帧编码,T' = T。已测试。
+  qwen3vl       生成式 VLM(Qwen/Qwen3-VL-*-Instruct)。视频 token 取语言模型隐状态,
+                已被前置的文本指令调制 —— 医生关注区域以指令形式进入(vlm_prompts.py)。
   internvideo2  OpenGVLab InternVideo2 stage2 视觉编码器,原生视频。权重是 gated 且
                 需要官方仓库代码(INTERNVIDEO2_REPO),见 docs/vlm_backbone.md。未在本机测试。
 
@@ -192,6 +194,161 @@ class _InternVideo2Vision(nn.Module):
 
 
 # --------------------------------------------------------------------------- #
+# Qwen3-VL(生成式 VLM):指令调制的视频 token
+# --------------------------------------------------------------------------- #
+class _Qwen3VLVision(nn.Module):
+    """Qwen3-VL 的语言模型隐状态作为视频 token。
+
+    与 SigLIP 的本质区别:视频 token 经过语言模型后**已被前文指令调制**。医生的关注
+    区域以文本指令(models/vlm_prompts.py)进入,而不是热图。指令放在视频之前 ——
+    因果注意力下视频 token 只能看到前文。
+
+    输出 (B, d_text, t', h', w'),t' = T/2(temporal patch 2),h' = w' = S/32(patch 16 x merge 2)。
+    8 帧 224 -> (4, 7, 7);8 帧 448 -> (4, 14, 14)。
+    另提供 encode_pooled(回答位置的隐状态,看得到视频与指令)与
+    attention_maps(回答位置对视频 token 的注意力,可解释输出)。
+    """
+
+    def __init__(self, model_name: str, img_size: Optional[int], prompt: str,
+                 layer: int = -1, attn_implementation: str = "sdpa",
+                 dtype: str = "bfloat16") -> None:
+        super().__init__()
+        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+
+        from .vlm_prompts import get_prompt
+
+        # 默认 bf16:8B 权重 16GB,fp32 翻倍;CPU 上 bf16 也能算(登录节点每用户只有 16GB 内存)
+        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.model = Qwen3VLForConditionalGeneration.from_pretrained(
+            model_name, dtype=getattr(torch, dtype), attn_implementation=attn_implementation,
+            low_cpu_mem_usage=True,
+        )
+        cfg = self.model.config
+        vcfg = cfg.vision_config
+        self.patch = int(vcfg.patch_size) * int(vcfg.spatial_merge_size)  # 每个 LLM token 的像素边长
+        self.temporal = int(vcfg.temporal_patch_size)
+        self.img_size = int(img_size or 224)
+        if self.img_size % self.patch:
+            raise ValueError(f"img_size {self.img_size} 必须是 {self.patch} 的整数倍")
+        self.grid = self.img_size // self.patch
+        self.token_dim = int(cfg.text_config.hidden_size)
+        self.video_token_id = int(cfg.video_token_id)
+        self.layer = int(layer)
+        self.prompt = get_prompt(prompt)
+        self._chat_cache: dict[str, str] = {}
+
+    # ---- 可训练块(V3 用)----
+    @property
+    def blocks(self) -> nn.ModuleList:
+        return self.model.model.language_model.layers
+
+    @property
+    def final_norm(self) -> nn.Module:
+        return self.model.model.language_model.norm
+
+    # ---- 输入构造 ----
+    def _chat_text(self, prompt: str) -> str:
+        if prompt not in self._chat_cache:
+            messages = [{
+                "role": "user",
+                # 文本在前、视频在后:视频 token 才能看到指令
+                "content": [{"type": "text", "text": prompt}, {"type": "video"}],
+            }]
+            self._chat_cache[prompt] = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+        return self._chat_cache[prompt]
+
+    def _inputs(self, video: torch.Tensor, prompt: str):
+        """video (b,3,T,S,S) in [0,1] -> processor 输出(已放到模型所在设备)。"""
+        from transformers.video_utils import VideoMetadata
+
+        b, c, t, h, w = video.shape
+        # processor 自己做 rescale(1/255)与 normalize,喂 uint8
+        clips = [(video[i].transpose(0, 1) * 255).round().clamp(0, 255).to(torch.uint8).cpu() for i in range(b)]
+        # 每段是 1 秒的 gait 周期,T 帧均匀铺满这一秒 -> fps = T,时间戳 0 ~ 1s
+        meta = [VideoMetadata(total_num_frames=t, fps=float(t), duration=1.0,
+                              frames_indices=list(range(t)), height=h, width=w) for _ in range(b)]
+        px = t * self.img_size * self.img_size
+        inputs = self.processor(
+            text=[self._chat_text(prompt)] * b,
+            videos=clips,
+            video_metadata=meta,
+            do_sample_frames=False,
+            size={"shortest_edge": px, "longest_edge": px},
+            padding=True,
+            return_tensors="pt",
+        )
+        device = next(self.model.parameters()).device
+        return inputs.to(device)
+
+    @staticmethod
+    def _last_positions(attention_mask: torch.Tensor) -> torch.Tensor:
+        """每个样本最后一个非 pad 位置(兼容左右 padding)。"""
+        idx = torch.arange(attention_mask.shape[1], device=attention_mask.device)
+        return (attention_mask * idx).argmax(dim=1)
+
+    def _video_grid(self, inputs, i: int) -> tuple[int, int, int]:
+        t, h, w = inputs["video_grid_thw"][i].tolist()
+        m = int(self.model.config.vision_config.spatial_merge_size)
+        return int(t), int(h // m), int(w // m)
+
+    # ---- 前向 ----
+    def forward_video(self, video: torch.Tensor, prompt: Optional[str] = None,
+                      return_pooled: bool = False):
+        """(b,3,T,S,S) -> tokens (b, d, t', h', w'),可选回答位置的 pooled (b, d)。"""
+        prompt = prompt or self.prompt
+        inputs = self._inputs(video, prompt)
+        out = self.model.model(**inputs, output_hidden_states=self.layer != -1)
+        hidden = out.last_hidden_state if self.layer == -1 else out.hidden_states[self.layer]
+        mask = inputs["input_ids"] == self.video_token_id
+        grids = []
+        for i in range(hidden.shape[0]):
+            t, h, w = self._video_grid(inputs, i)
+            tok = hidden[i][mask[i]]  # (t*h*w, d),按 t, h, w 顺序排列
+            assert tok.shape[0] == t * h * w, (tok.shape, t, h, w)
+            grids.append(tok.view(t, h, w, -1).permute(3, 0, 1, 2))
+        tokens = torch.stack(grids, dim=0).float()  # (b, d, t', h', w')
+        if not return_pooled:
+            return tokens
+        pos = self._last_positions(inputs["attention_mask"])
+        pooled = hidden[torch.arange(hidden.shape[0]), pos].float()
+        return tokens, pooled
+
+    @torch.no_grad()
+    def attention_maps(self, video: torch.Tensor, prompt: str, last_layers: int = 4) -> torch.Tensor:
+        """回答位置对视频 token 的注意力,取最后 last_layers 层、所有头平均 -> (b, t', h', w'),和为 1。
+        需要 attn_implementation="eager" 才有 attentions。"""
+        inputs = self._inputs(video, prompt)
+        out = self.model.model(**inputs, output_attentions=True)
+        attns = out.attentions[-last_layers:]  # 每层 (b, heads, L, L)
+        pos = self._last_positions(inputs["attention_mask"])
+        mask = inputs["input_ids"] == self.video_token_id
+        maps = []
+        for i in range(video.shape[0]):
+            rows = torch.stack([a[i, :, pos[i], :] for a in attns], dim=0).float()  # (layers, heads, L)
+            row = rows.mean(dim=(0, 1))[mask[i]]
+            t, h, w = self._video_grid(inputs, i)
+            row = row / row.sum().clamp_min(1e-8)
+            maps.append(row.view(t, h, w))
+        return torch.stack(maps, dim=0)
+
+    @torch.no_grad()
+    def answer_logits(self, video: torch.Tensor, prompt: str, candidates: list[str]) -> torch.Tensor:
+        """回答首 token 在候选词上的 logit (b, len(candidates)),零样本诊断用。"""
+        inputs = self._inputs(video, prompt)
+        logits = self.model(**inputs).logits
+        pos = self._last_positions(inputs["attention_mask"])
+        step = logits[torch.arange(logits.shape[0]), pos].float()  # (b, vocab)
+        tok = self.processor.tokenizer
+        cols = []
+        for word in candidates:
+            ids = {tok.encode(v, add_special_tokens=False)[0] for v in (word, " " + word, word.capitalize())}
+            cols.append(step[:, sorted(ids)].max(dim=1).values)
+        return torch.stack(cols, dim=1)
+
+
+# --------------------------------------------------------------------------- #
 # 统一封装
 # --------------------------------------------------------------------------- #
 class VLMTokenEncoder(nn.Module):
@@ -205,15 +362,44 @@ class VLMTokenEncoder(nn.Module):
         img_size: Optional[int] = None,
         trainable_blocks: int = 0,
         forward_chunk: int = 64,
+        prompt: str = "generic",
+        layer: int = -1,
+        attn_implementation: str = "sdpa",
+        cache_manifest: Optional[str] = None,
+        dtype: str = "bfloat16",
     ) -> None:
         super().__init__()
         self.backend = backend
+        if cache_manifest:
+            # 训练只读离线缓存时不加载视觉塔(Qwen 8B 有 17GB,白占显存)。
+            # token_dim / grid 来自抽特征时写的 manifest.json
+            import json
+
+            if trainable_blocks > 0:
+                raise ValueError("解冻视觉塔(vlm_trainable_blocks>0)不能与 feature_cache_dir 同用")
+            with open(cache_manifest) as f:
+                mani = json.load(f)
+            if mani.get("backend") != backend:
+                raise ValueError(f"缓存是 {mani.get('backend')} 抽的,配置却是 {backend}")
+            self.tower = None
+            self.token_dim = int(mani["token_dim"])
+            self.grid = int(mani["grid"])
+            self.trainable_blocks = 0
+            self.forward_chunk = int(forward_chunk)
+            self.video_native = backend in ("internvideo2", "qwen3vl")
+            self.token_proj = nn.Conv3d(self.token_dim, hidden_dim, kernel_size=1, bias=False)
+            logger.info("VLM %s: 只读缓存模式(manifest=%s),未加载视觉塔", backend, cache_manifest)
+            return
         if backend == "siglip2":
             self.tower = _SigLIP2Vision(model_name, img_size)
         elif backend == "internvideo2":
             self.tower = _InternVideo2Vision(model_name, img_size)
+        elif backend == "qwen3vl":
+            self.tower = _Qwen3VLVision(model_name, img_size, prompt, layer, attn_implementation, dtype)
         else:
-            raise ValueError(f"未知的 VLM 后端 {backend},可选 siglip2 / internvideo2")
+            raise ValueError(f"未知的 VLM 后端 {backend},可选 siglip2 / internvideo2 / qwen3vl")
+        # 整段视频一次前向的后端(vs. siglip2 逐帧)
+        self.video_native = backend in ("internvideo2", "qwen3vl")
 
         self.token_dim = self.tower.token_dim
         self.grid = self.tower.grid
@@ -247,10 +433,17 @@ class VLMTokenEncoder(nn.Module):
 
     def train(self, mode: bool = True):
         super().train(mode)
-        if self.frozen:
+        if self.frozen and self.tower is not None:
             # 冻结的塔永远 eval:dropout / stochastic depth 关掉,特征才是确定的
             self.tower.eval()
         return self
+
+    def _require_tower(self) -> None:
+        if self.tower is None:
+            raise RuntimeError(
+                "该编码器是只读缓存模式(feature_cache_dir),没有加载视觉塔;"
+                "batch 里缺少 tokens,检查缓存目录是否覆盖了全部视频"
+            )
 
     # ---- 前向 ----
     def encode_raw(self, video: torch.Tensor) -> torch.Tensor:
@@ -259,9 +452,10 @@ class VLMTokenEncoder(nn.Module):
         冻结时在 no_grad 下分块跑,一条视频的全部 gait 段拼成 batch 后帧数可达
         28 段 x 8 帧 = 224 帧,so400m 一次吃不下。
         """
+        self._require_tower()
         ctx = torch.no_grad() if self.frozen else torch.enable_grad()
         with ctx:
-            if self.backend == "internvideo2":
+            if self.video_native:
                 outs = [
                     self.tower.forward_video(chunk)
                     for chunk in video.split(max(1, self.forward_chunk // video.shape[2]), dim=0)
@@ -273,6 +467,21 @@ class VLMTokenEncoder(nn.Module):
             outs = [self.tower(chunk) for chunk in frames.split(self.forward_chunk, dim=0)]
             tokens = torch.cat(outs, dim=0)
             return self.tower.tokens_to_grid(tokens, b, t)
+
+    @torch.no_grad()
+    def encode_with_pooled(self, video: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """离线抽特征用:tokens (B,d,t',h',w') + 回答位置的 pooled (B,d)。
+        只有 qwen3vl 有真正的回答位置;其它后端 pooled = token 均值。"""
+        self._require_tower()
+        if self.backend == "qwen3vl":
+            toks, pools = [], []
+            for chunk in video.split(max(1, self.forward_chunk // video.shape[2]), dim=0):
+                t, p = self.tower.forward_video(chunk, return_pooled=True)
+                toks.append(t)
+                pools.append(p)
+            return torch.cat(toks, 0), torch.cat(pools, 0)
+        raw = self.encode_raw(video)
+        return raw, raw.mean(dim=(2, 3, 4))
 
     def forward(
         self,
@@ -292,8 +501,20 @@ class VLMTokenEncoder(nn.Module):
         return (tokens, raw) if return_raw else tokens
 
 
-def build_token_encoder(cfg, hidden_dim: int) -> nn.Module:
-    """按 model.token_backbone 构建 token 编码器:resnet3d(默认,既有行为)或 vlm。"""
+def cache_manifest_path(data_cfg) -> Optional[str]:
+    """data.feature_cache_dir 非空时返回其 manifest.json 路径,否则 None。"""
+    cache_dir = str(getattr(data_cfg, "feature_cache_dir", "") or "") if data_cfg is not None else ""
+    if not cache_dir:
+        return None
+    path = os.path.join(cache_dir, "manifest.json")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"特征缓存 {cache_dir} 缺 manifest.json,先跑 scripts/extract_vlm_features.py")
+    return path
+
+
+def build_token_encoder(cfg, hidden_dim: int, data_cfg=None) -> nn.Module:
+    """按 model.token_backbone 构建 token 编码器:resnet3d(默认,既有行为)或 vlm。
+    data_cfg 给了且 feature_cache_dir 非空时,vlm 走只读缓存模式,不加载视觉塔。"""
     kind = str(getattr(cfg, "token_backbone", "resnet3d"))
     if kind == "resnet3d":
         from .clip_align import ResNet3DTokenEncoder
@@ -312,5 +533,8 @@ def build_token_encoder(cfg, hidden_dim: int) -> nn.Module:
             img_size=getattr(cfg, "vlm_img_size", None),
             trainable_blocks=int(getattr(cfg, "vlm_trainable_blocks", 0)),
             forward_chunk=int(getattr(cfg, "vlm_forward_chunk", 64)),
+            prompt=str(getattr(cfg, "vlm_prompt", "generic")),
+            layer=int(getattr(cfg, "vlm_layer", -1)),
+            cache_manifest=cache_manifest_path(data_cfg),
         )
     raise ValueError(f"未知的 token_backbone {kind},可选 resnet3d / vlm")
