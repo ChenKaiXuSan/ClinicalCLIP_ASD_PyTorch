@@ -181,3 +181,81 @@ HF_HOME=/work/SKIING/chenkaixu/hf_cache python tests/smoke_vlm.py \
 
 登录节点 CPU 上用 siglip2-base 约 2-3 分钟,覆盖编码器形状、在线/缓存两条路一致、
 探针、真实视频抽特征 → 缓存 → dataset → collate → trainer 一步反传。
+
+## 结果(2026-09-10,单种子 42,患者级 n=79,ASD 54 / non-ASD 25)
+
+全部走 `analysis/patient_level_stats.py` 口径:5 折 test 拼成 79 个独立患者,段级概率按患者均值软投票,
+macro = 平衡准确率(多数类基线 0.500),bootstrap 95% 区间,McNemar 精确检验。主线配置取同一种子。
+
+### 主表:8B Qwen 组 vs 主线
+
+| 配置 | backbone | 先验 | macro [95% CI] |
+|---|---|---|---|
+| B0_3dcnn | slow_r50 端到端 | 无 | **0.720** [0.606, 0.825] |
+| A1_no_grounding | slow_r50 concept | 存在性 | 0.707 [0.597, 0.815] |
+| M0_concept_learned | slow_r50 concept | 热图 + 存在性 | 0.655 [0.544, 0.764] |
+| Q1_qwen_concept_clinical | Qwen3-VL-8B 冻结 token,concept | 指令 + 热图 + 存在性 | 0.615 [0.495, 0.731] |
+| Q1g_qwen_concept_generic | 同上 | 热图 + 存在性 | 0.586 [0.466, 0.701] |
+| Q0m_qwen_probe_generic_mean | 8B token 均值 + 线性头 | 无 | 0.584 [0.465, 0.701] |
+| Q1c_qwen_concept_clinical_no_prior | 8B concept | 仅指令 | 0.575 [0.477, 0.677] |
+| Q0bm_qwen_probe_clinical_mean | 8B token 均值 + 线性头 | 仅指令 | 0.573 [0.455, 0.690] |
+| A4_no_prior | slow_r50 concept | 无 | 0.573 [0.459, 0.683] |
+| Q0_qwen_probe_generic | 8B 回答位置 + 线性头 | 无 | 0.561 [0.491, 0.642] |
+| Q0b_qwen_probe_clinical | 8B 回答位置 + 线性头 | 仅指令 | 0.517 [0.425, 0.612] |
+
+McNemar(A 独对 : B 独对,p):
+
+| 比较 | 回答的问题 | 结果 |
+|---|---|---|
+| Q1 vs Q1c | 热图先验叠在指令上有没有用 | 11 : 16,p = 0.44 |
+| Q0b vs Q0 | 文本指令先验(探针) | 4 : 10,p = 0.18(方向为负) |
+| Q1 vs Q1g | 文本指令先验(concept) | 6 : 4,p = 0.75 |
+| B0 vs Q1g | 冻结 8B token 能否替代端到端 slow_r50 | 24 : 13,p = 0.10 |
+| M0 vs Q1 | 同架构换 backbone | 17 : 8,p = 0.11 |
+
+**结论**:
+1. 冻结的 Qwen3-VL 特征在患者级上**没有超过**端到端微调的 slow_r50,所有 Qwen 配置都落在
+   0.52–0.62,低于 B0 的 0.72,虽未达显著(p ≈ 0.10)但方向一致。
+2. **文本指令先验没有收益**:探针上 clinical 反而低于 generic(p = 0.18),concept 上二者等价(p = 0.75)。
+3. **训练方差没有降下来**:Q1g 五折段级平衡准确率 0.41 / 0.51 / 0.61 / 0.72 / 0.76,与主线同量级。
+   "冻结塔降方差"的假设不成立 —— 方差来自 17 人一折的 test 集,不来自可训练参数量。
+4. **grounding 监督在 Qwen token 上同样有效**:Q1 / Q1g 的 attn_align 0.39–0.47(五折),region_ap 0.67–0.95;
+   去掉先验的 Q1c 掉到 0.02–0.08(= 均匀下界 0.068),region_ap 0.30–0.69。与主线 M0 0.537 / A4 0.122 同一格局,
+   对齐绝对值略低于 slow_r50。
+
+### 尺寸曲线(回答位置探针,generic / clinical)
+
+| 尺寸 | generic | clinical |
+|---|---|---|
+| 2B | 0.534 | 0.523 |
+| 4B | 0.552 | 0.564 |
+| 8B | 0.561 | 0.517 |
+| 32B(bf16) | 0.461 | 0.458 |
+
+没有随尺寸上升的趋势,32B 低于随机。回答位置的隐状态不是可用的诊断特征;token 均值(Q0m 0.584)略好。
+
+### 不训练的两项(8B)
+
+| 项 | 结果 | 参照 |
+|---|---|---|
+| Q3 零样本诊断(79 人) | 患者级 AUC **0.444** [0.295, 0.591];阈值 0 下 0 个患者被判 ASD,平衡准确率 0.500 | 随机 0.5 |
+| Q2 VLM 自身注意力 vs 医生区域(80 条视频) | attn_align **0.029**,逐区域 0.027–0.040 | 均匀 0.069,M0 0.537,Grad-CAM 0.135 |
+
+通用 VLM 既不能零样本识别 ASD 步态,被要求"只看腰椎骨盆"时注意力也不落在腰椎骨盆上(比均匀还差)。
+临床可解释性必须靠显式 grounding 监督,不能指望 VLM 自带。
+
+### 实测开销(H100 PCIe)
+
+| | 抽特征(全库 14075 段 @448,每种 prompt) | 训练(5 折 × 100 epoch,读缓存) |
+|---|---|---|
+| 2B fp32 | 49 min,43 GB | 每折 ~20 min |
+| 4B fp32 | 85–92 min | ~25 min |
+| 8B fp32 | 132–153 min,86 GB | ~30 min(35 任务并发时 IO 争抢) |
+| 32B bf16 | 54–57 min,106 GB | ~40 min |
+
+缓存目录 `vlm_cache/qwen3vl_{2b,4b,8b,32b}_448_{generic,clinical}` 合计约 550 GB,实验结束后可删。
+
+### 数据备注
+
+`json_mix/DHS/20170926_DHS_lat_V1-0002.json` 与 `0003.json` 内容相同、指向同一个视频文件,
+全库 1890 条 json 只有 1889 个不同的 video_name。缓存按 video_name 存,两条 json 共用一份,段数一致,不影响训练。
