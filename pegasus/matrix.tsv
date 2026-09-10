@@ -96,3 +96,11 @@ qwen	Q1_qwen_concept_clinical	model.backbone=concept model.token_backbone=vlm mo
 qwen	Q1g_qwen_concept_generic	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_generic
 # Q1 去掉热图先验:只剩文本指令这一种先验
 qwen	Q1c_qwen_concept_clinical_no_prior	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical loss.grounding_weight=0 loss.presence_weight=0
+
+# ============ 尺寸曲线:只比探针对(generic vs clinical),2B / 4B;8B 在 qwen 组 ============
+# 训练走缓存只要几分钟,多一个尺寸的成本全在抽特征。目的不是选模型,而是看"文本先验的效应"
+# 随模型变大是否增强;2B~8B 统计等价本身也是结论(79 个患者,backbone 大小不是瓶颈)。
+qwen_scale	Q0_qwen2b_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_2b_448_generic
+qwen_scale	Q0b_qwen2b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_2b_448_clinical
+qwen_scale	Q0_qwen4b_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_4b_448_generic
+qwen_scale	Q0b_qwen4b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_4b_448_clinical
