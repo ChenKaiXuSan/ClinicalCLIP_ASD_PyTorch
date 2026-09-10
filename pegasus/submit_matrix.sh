@@ -246,7 +246,7 @@ ENV
         qsub -t "0-$((n - 1))" \
             -l "elapstim_req=${ELAPS}" \
             -N "cclip_mx${part}" \
-            -v "MATRIX_RUN=${prefix}" \
+            -v "MATRIX_RUN=${prefix},CLINICALCLIP_REPO_ROOT=${REPO_ROOT},CLINICALCLIP_DATA_ROOT=${DATA_ROOT}" \
             -o "logs/pegasus/matrix_${STAMP}_p${part}_out.log" \
             -e "logs/pegasus/matrix_${STAMP}_p${part}_err.log" \
             pegasus/matrix_job.sh
