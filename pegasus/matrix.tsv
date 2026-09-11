@@ -115,3 +115,11 @@ qwen_box	Q1box_qwen_concept_clinical	model.backbone=concept model.token_backbone
 qwen_box	Q1box_qwen_concept_generic	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_generic
 qwen_box	Q0mbox_qwen_probe_clinical_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_clinical
 qwen_box	Q0mbox_qwen_probe_generic_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_generic
+
+# ============ 角色二:VLM 教师 —— 视频分支额外回归 VLM 的 8 个临床属性分数(推理不需要 VLM) ============
+# 目标来自 analysis/eval_qwen_attributes.py(8B, z 标准化), 占位符 AUX -> logs/qwen_attributes/<模型>。
+# 与主线 B0 / M0 / A1 同种子对比:辅助目标能否把"医生词汇"蒸馏进像素特征。在线解码视频, 每折 2.5-4.5 h。
+distill	X0_3dcnn_aux	model.backbone=3dcnn data.aux_targets_dir=AUX loss.aux_weight=1.0
+distill	X0b_3dcnn_aux0.3	model.backbone=3dcnn data.aux_targets_dir=AUX loss.aux_weight=0.3
+distill	X1_concept_aux	model.backbone=concept data.aux_targets_dir=AUX loss.aux_weight=1.0
+distill	X2_concept_nogr_aux	model.backbone=concept loss.grounding_weight=0 data.aux_targets_dir=AUX loss.aux_weight=1.0

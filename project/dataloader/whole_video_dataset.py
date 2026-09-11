@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
@@ -128,6 +129,26 @@ def _decode_selected(video_path: str, wanted: torch.Tensor) -> torch.Tensor:
     return torch.from_numpy(stacked).permute(0, 3, 1, 2).contiguous()
 
 
+def _load_aux_targets(aux_dir: str) -> tuple[dict[str, torch.Tensor], list[str]]:
+    """读 <aux_dir>/*.json -> {video_name: (n_chunks, A) z 标准化分数}, 属性名按文件名排序。"""
+    files = sorted(Path(aux_dir).glob("*.json"))
+    if not files:
+        raise FileNotFoundError(f"辅助目标目录 {aux_dir} 里没有 json")
+    names = [f.stem for f in files]
+    per_attr = [json.load(open(f)) for f in files]
+    videos = set.intersection(*(set(d) for d in per_attr))
+    stats = []
+    for d in per_attr:
+        s = torch.tensor([x for v in videos for x in d[v]["scores"]], dtype=torch.float32)
+        stats.append((s.mean(), s.std().clamp_min(1e-6)))
+    out = {}
+    for v in videos:
+        cols = [(torch.tensor(d[v]["scores"], dtype=torch.float32) - m) / sd for d, (m, sd) in zip(per_attr, stats)]
+        out[v] = torch.stack(cols, dim=1)  # (n_chunks, A)
+    logger.info("辅助目标: %d 个属性 %s, %d 条视频", len(names), names, len(out))
+    return out, names
+
+
 def draw_lumbar_box(video: torch.Tensor, pose: torch.Tensor, thickness: int = 3,
                     color=(1.0, 0.0, 0.0)) -> torch.Tensor:
     """在每帧上画出腰椎骨盆区域的红框 —— 给 VLM 的**视觉提示**。
@@ -177,8 +198,17 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         return_video: bool = True,
         feature_cache_dir: str = "",
         visual_prompt: str = "",
+        aux_targets_dir: str = "",
     ) -> None:
         super().__init__()
+
+        # 辅助回归目标(角色二:VLM 教师):目录下每个 <attr>.json 是
+        # {video_name: {"scores": [逐段]}},由 analysis/eval_qwen_attributes.py 生成。
+        # 逐属性用全库均值/方差做 z 标准化(不用标签,无泄漏),段数须与采样计划一致。
+        self._aux: dict[str, torch.Tensor] = {}
+        self.aux_names: list[str] = []
+        if aux_targets_dir:
+            self._aux, self.aux_names = _load_aux_targets(aux_targets_dir)
 
         # 视觉提示:"box_lumbar" 在帧上按骨架画腰椎骨盆红框(给 VLM 看的先验,患者无关)
         if visual_prompt not in ("", "box_lumbar"):
@@ -285,6 +315,15 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
             "num_chunks": n_chunks,
         }
 
+        if self._aux:
+            aux = self._aux.get(video_name)
+            if aux is None or aux.shape[0] != n_chunks:
+                raise RuntimeError(
+                    f"{video_name}: 辅助目标缺失或段数不符 "
+                    f"({None if aux is None else aux.shape[0]} vs {n_chunks})"
+                )
+            sample["aux"] = aux  # (n_chunks, A)
+
         if cached is not None:
             tokens = cached["tokens"] if isinstance(cached, dict) else cached
             if tokens.shape[0] != n_chunks:
@@ -355,10 +394,12 @@ def whole_video_dataset(
     clip_duration: int = 1,
     feature_cache_dir: str = "",
     visual_prompt: str = "",
+    aux_targets_dir: str = "",
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
         feature_cache_dir=feature_cache_dir,
         visual_prompt=visual_prompt,
+        aux_targets_dir=aux_targets_dir,
         experiment=experiment,
         labeled_video_paths=dataset_idx,
         img_size=img_size,

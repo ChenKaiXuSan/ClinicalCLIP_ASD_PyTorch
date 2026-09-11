@@ -37,6 +37,7 @@ import logging
 from pytorch_lightning import LightningModule
 
 from models.make_model import MakeVideoModule
+from models.clinical_concept import _count_aux
 from utils.helper import save_helper
 from utils.metrics import ClassificationMetrics
 
@@ -70,6 +71,15 @@ class SingleModule(LightningModule):
         # define model
         self.video_cnn = MakeVideoModule(hparams)()
 
+        # 角色二(VLM 教师):额外回归 VLM 给出的临床属性分数。把 slow_r50 的分类投影换成
+        # Identity 拿到 2048 维特征,分类头与辅助头并列;推理时辅助头不参与判决
+        self.w_aux = float(getattr(hparams.loss, "aux_weight", 0.0))
+        self.aux_dim = _count_aux(getattr(hparams, "data", None)) if self.w_aux > 0 else 0
+        if self.aux_dim > 0:
+            self.video_cnn.blocks[-1].proj = nn.Identity()
+            self.cls_head = nn.Linear(2048, self.num_classes)
+            self.aux_head = nn.Linear(2048, self.aux_dim)
+
         # save the hyperparameters to the file and ckpt
         self.save_hyperparameters()
 
@@ -81,7 +91,20 @@ class SingleModule(LightningModule):
         self.test_label_list: List[torch.Tensor] = []
 
     def forward(self, x):
-        return self.video_cnn(x)
+        return self._forward(x)[0]
+
+    def _forward(self, x):
+        """(logits, aux_pred 或 None)。"""
+        out = self.video_cnn(x)
+        if self.aux_dim > 0:
+            return self.cls_head(out), self.aux_head(out)
+        return out, None
+
+    def _aux_loss(self, aux_pred, batch, logits):
+        aux_target = batch.get("aux")
+        if aux_pred is None or aux_target is None or self.w_aux <= 0:
+            return logits.new_zeros(())
+        return F.mse_loss(aux_pred, aux_target.detach().float())
 
     def training_step(self, batch: torch.Tensor, batch_idx: int):
         
@@ -92,7 +115,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds = self.video_cnn(video)
+        video_preds, aux_pred = self._forward(video)
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         # check shape 
@@ -101,9 +124,13 @@ class SingleModule(LightningModule):
             
         assert label.shape[0] == video_preds.shape[0]
 
-        loss = F.cross_entropy(video_preds, label.long())
+        cls_loss = F.cross_entropy(video_preds, label.long())
+        aux_loss = self._aux_loss(aux_pred, batch, video_preds)
+        loss = cls_loss + self.w_aux * aux_loss
 
         self.log("train/loss", loss, on_epoch=True, on_step=True)
+        self.log("train/loss_cls", cls_loss, on_epoch=True, on_step=False, batch_size=b)
+        self.log("train/loss_aux", aux_loss, on_epoch=True, on_step=False, batch_size=b)
         self.metrics.log(self, "train", video_preds_softmax, label, batch_size=b)
 
         return loss
@@ -117,7 +144,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds = self.video_cnn(video)
+        video_preds, aux_pred = self._forward(video)
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         if b == 1:
@@ -126,9 +153,12 @@ class SingleModule(LightningModule):
         # check shape 
         assert label.shape[0] == b
 
-        loss = F.cross_entropy(video_preds, label.long())
+        cls_loss = F.cross_entropy(video_preds, label.long())
+        aux_loss = self._aux_loss(aux_pred, batch, video_preds)
+        loss = cls_loss + self.w_aux * aux_loss
 
         self.log("val/loss", loss, on_epoch=True, on_step=True)
+        self.log("val/loss_aux", aux_loss, on_epoch=True, on_step=False, batch_size=b)
         self.metrics.log(self, "val", video_preds_softmax, label, batch_size=b)
 
     def test_step(self, batch: torch.Tensor, batch_idx: int):
@@ -139,7 +169,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds = self.video_cnn(video)
+        video_preds, aux_pred = self._forward(video)
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         if b == 1:

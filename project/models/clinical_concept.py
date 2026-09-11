@@ -54,6 +54,15 @@ CONCEPT_PROMPTS = [
 ]
 
 
+def _count_aux(data_cfg) -> int:
+    """data.aux_targets_dir 下 json 文件数 = 辅助目标维度;未设置返回 0。"""
+    import glob
+    import os
+
+    d = str(getattr(data_cfg, "aux_targets_dir", "") or "") if data_cfg is not None else ""
+    return len(glob.glob(os.path.join(d, "*.json"))) if d else 0
+
+
 class ConceptBank(nn.Module):
     """临床概念嵌入 P ∈ (R, d)。
 
@@ -220,6 +229,15 @@ class ClinicalConceptNet(nn.Module):
             nn.Linear(self.embed_dim + global_dim, self.num_classes),
         )
 
+        # 角色二:辅助回归头,预测 VLM 给出的临床属性分数;与分类头共享同一份特征。
+        # 属性数由 data.aux_targets_dir 里的 json 数决定
+        self.aux_dim = _count_aux(getattr(hparams, "data", None))
+        self.aux_head = (
+            nn.Sequential(nn.LayerNorm(self.embed_dim + global_dim),
+                          nn.Linear(self.embed_dim + global_dim, self.aux_dim))
+            if self.aux_dim > 0 else None
+        )
+
     def forward(
         self,
         video: Optional[torch.Tensor] = None,
@@ -276,10 +294,12 @@ class ClinicalConceptNet(nn.Module):
         # 全局通路:概念注意力管不到的那条路
         global_feat = (raw_tokens if raw_tokens is not None else tokens).mean(dim=(2, 3, 4))
 
-        logits = self.classifier(torch.cat([concept_feat, global_feat], dim=-1))
+        fused = torch.cat([concept_feat, global_feat], dim=-1)
+        logits = self.classifier(fused)
 
         return {
             "logits": logits,
+            "aux": self.aux_head(fused) if self.aux_head is not None else None,
             "region_logits": region_logits,
             "attn": attn,
             "region_feat": region_feat,

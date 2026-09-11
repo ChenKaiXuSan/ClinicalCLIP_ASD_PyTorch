@@ -73,6 +73,8 @@ class ClinicalConceptModule(LightningModule):
         self.w_presence = float(getattr(loss_cfg, "presence_weight", 1.0))
         self.w_ground = float(getattr(loss_cfg, "grounding_weight", 1.0))
         self.w_concept = float(getattr(loss_cfg, "concept_weight", 0.1))
+        # 角色二:VLM 属性分数的辅助回归(MSE, 目标已 z 标准化)
+        self.w_aux = float(getattr(loss_cfg, "aux_weight", 0.0))
 
         self.num_classes = int(getattr(hparams.model, "model_class_num", 3))
         # 消融用:把医生区域换成随机区域,检验增益是否真来自临床知识
@@ -181,11 +183,18 @@ class ClinicalConceptModule(LightningModule):
 
         concept = concept_contrastive_loss(outputs["region_feat"], outputs["concepts"])
 
+        aux_target = batch.get("aux")
+        if self.w_aux > 0 and aux_target is not None and outputs.get("aux") is not None:
+            aux_loss = F.mse_loss(outputs["aux"], aux_target.detach().float())
+        else:
+            aux_loss = zero
+
         loss = (
             cls_loss
             + self.w_presence * pres_loss
             + self.w_ground * ground
             + self.w_concept * concept
+            + self.w_aux * aux_loss
         )
 
         probs = torch.softmax(logits, dim=1)
@@ -197,6 +206,7 @@ class ClinicalConceptModule(LightningModule):
             ("loss_presence", pres_loss),
             ("loss_grounding", ground),
             ("loss_concept", concept),
+            ("loss_aux", aux_loss),
         ]:
             self.log(
                 f"{stage}/{name}", value, on_epoch=True, on_step=on_step,

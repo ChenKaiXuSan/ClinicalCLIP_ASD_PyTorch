@@ -25,6 +25,8 @@ EMB="${EMB:-${DATA_ROOT}/concepts/clip_vit_b32.pt}"
 VLM_TAG="${VLM_TAG:-siglip2_so400m_224}"
 EMB_VLM="${EMB_VLM:-${DATA_ROOT}/concepts/${VLM_TAG}.pt}"
 CACHE="${CACHE:-${DATA_ROOT}/vlm_cache/${VLM_TAG}}"
+# 角色二(distill 组):VLM 属性分数目录,占位符 AUX
+AUX="${AUX:-${REPO_ROOT}/logs/qwen_attributes/qwen3-vl-8b-instruct_448}"
 
 GROUP="${GROUP:-all}"        # 逗号分隔,对应 matrix.tsv 第一列;all 表示全部
 # 按实验名精确挑选,逗号分隔。分组是按用途划的,而跨组挑几个配置(比如只给承载论点
@@ -131,6 +133,13 @@ while IFS=$'\t' read -r grp name args; do
     done
     [[ "${args}" == *CACHE* ]] && needs_cache=1
     args="${args//CACHE/${CACHE}}"
+    if [[ "${args}" == *AUX* ]]; then
+        if [[ "$(ls "${AUX}"/*.json 2>/dev/null | wc -l)" -eq 0 ]]; then
+            echo "ERROR: ${name} 需要 VLM 属性分数目录 ${AUX}(analysis/eval_qwen_attributes.py 的输出),但里面没有 json。" >&2
+            exit 1
+        fi
+        args="${args//AUX/${AUX}}"
+    fi
     [[ "${args}" == *EMB* ]] && needs_emb=1
     NAMES+=("${name}")
     ARGSS+=("${args//EMB/${EMB}}")

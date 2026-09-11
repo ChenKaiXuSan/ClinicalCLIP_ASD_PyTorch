@@ -52,6 +52,8 @@ class WalkDataModule(LightningDataModule):
         self._region_supervision = opt.model.backbone in ("concept", "vlm_probe")
         # 离线 VLM 特征缓存目录(空则在线编码)。命中时 dataset 不解码视频
         self._feature_cache_dir = str(getattr(opt.data, "feature_cache_dir", "") or "")
+        # 角色二:VLM 属性分数作为视频分支的辅助回归目标(analysis/eval_qwen_attributes.py 的输出目录)
+        self._aux_targets_dir = str(getattr(opt.data, "aux_targets_dir", "") or "")
         self._region_map_size = getattr(opt.model, "region_map_size", 28)
         # 纯姿态基线只吃关键点,跳过视频解码(否则 90% 时间浪费在没用的像素上)
         self._return_pose = opt.model.backbone == "pose"
@@ -117,6 +119,7 @@ class WalkDataModule(LightningDataModule):
                 return_video=self._return_video and not self._feature_cache_dir,
                 clip_duration=self._clip_duration,
                 feature_cache_dir=self._feature_cache_dir,
+                aux_targets_dir=self._aux_targets_dir,
             )
 
             self.train_gait_dataset = whole_video_dataset(
@@ -162,12 +165,15 @@ class WalkDataModule(LightningDataModule):
         batch_pose = []
         batch_tokens = []
         batch_pooled = []
+        batch_aux = []
 
         for i in batch:
             if "tokens" in i:
                 batch_tokens.append(i["tokens"])
             if "pooled" in i:
                 batch_pooled.append(i["pooled"])
+            if "aux" in i:
+                batch_aux.append(i["aux"])
             # 姿态基线不解码视频,段数从 dataset 直接带过来
             gait_num = i["num_chunks"]
             disease = i["disease"]
@@ -209,7 +215,7 @@ class WalkDataModule(LightningDataModule):
                 {
                     k: v
                     for k, v in i.items()
-                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens", "pooled")
+                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens", "pooled", "aux")
                 }
                 for i in batch
             ],
@@ -223,6 +229,8 @@ class WalkDataModule(LightningDataModule):
             out["tokens"] = torch.cat(batch_tokens, dim=0)
         if batch_pooled:
             out["pooled"] = torch.cat(batch_pooled, dim=0)
+        if batch_aux:
+            out["aux"] = torch.cat(batch_aux, dim=0)  # (B, A)
 
         if batch_region_map:
             out["region_map"] = torch.cat(batch_region_map, dim=0)

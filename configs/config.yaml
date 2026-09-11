@@ -21,6 +21,9 @@ loss:
   presence_weight: 1.0
   grounding_weight: 1.0
   concept_weight: 0.1
+  # 角色二(VLM 教师):视频分支额外回归 VLM 给出的临床属性分数(z 标准化, MSE)。
+  # 0 = 不用;需要 data.aux_targets_dir。推理时不需要 VLM
+  aux_weight: 0.0
 
 paths:
   root_path: /workspace/data
@@ -44,6 +47,10 @@ data:
   # 非空时 dataset 不解码像素、直接返回 tokens,训练从小时级降到分钟级。
   # 必须与 model.vlm_backend / vlm_name / vlm_img_size / uniform_temporal_subsample_num 一致。
   feature_cache_dir: null
+
+  # 角色二:VLM 属性分数目录(analysis/eval_qwen_attributes.py 的 --out-dir, 每属性一个 json)。
+  # 非空时 batch 带 aux (B, A),配合 loss.aux_weight>0 训练辅助回归头
+  aux_targets_dir: null
 
 model:
   backbone: "clip"
