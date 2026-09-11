@@ -81,10 +81,18 @@ def main() -> None:
     pmap = build_patient_map(args.data_root)
     root = Path(args.root)
     ws = [float(w) for w in args.weights.split(",")]
+
+    def load_branch(tag: str):
+        """实验名 -> 从 logs/train 读;以 .json 结尾 -> 读 attribute_classifier.py --out 的患者级概率。"""
+        if tag.endswith(".json"):
+            d = json.load(open(tag))
+            return {p: (np.asarray(v["prob"], dtype=float), int(v["label"])) for p, v in d.items()}
+        return patient_probs(root, tag, pmap)
     print(f"{'A + B':58s} {'A':>6s} {'B':>6s}  " + "  ".join(f"融合w={w:.1f} [95% CI]        A独:融独 p" for w in ws))
     for pair in args.pairs:
         a_tag, b_tag = pair.split(":")
-        A, B = patient_probs(root, a_tag, pmap), patient_probs(root, b_tag, pmap)
+        A, B = load_branch(a_tag), load_branch(b_tag)
+        b_tag = Path(b_tag).stem if b_tag.endswith(".json") else b_tag
         pids = sorted(set(A) & set(B))
         if len(pids) < len(A) or len(pids) < len(B):
             print(f"  警告: {a_tag} {len(A)} 人, {b_tag} {len(B)} 人, 交集 {len(pids)} 人")

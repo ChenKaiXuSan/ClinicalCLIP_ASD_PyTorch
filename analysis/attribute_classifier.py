@@ -53,6 +53,7 @@ def main() -> None:
     ap.add_argument("--class-num", type=int, default=2)
     ap.add_argument("--C", type=float, default=1.0, help="逻辑回归正则强度的倒数")
     ap.add_argument("--agg", default="mean", choices=["mean", "max"], help="段 -> 患者的聚合")
+    ap.add_argument("--out", default=None, help="把患者级 P(ASD) 存成 json,供 late_fusion.py --branch-json 融合")
     args = ap.parse_args()
 
     attr_files = sorted(Path(args.attr_dir).glob("*.json"))
@@ -113,6 +114,7 @@ def main() -> None:
     folds = json.load(open(root / "clinical_CLIP_dataset" / "index_mapping" / str(args.class_num) / "index.json"))
     pat_index = {p: i for i, p in enumerate(pids)}
     pred = np.full(len(pids), -1)
+    prob = np.full(len(pids), np.nan)
     coefs = []
     for k, split in folds.items():
         test_p = {Path(x).stem.split("-")[0] for x in split["test"]}
@@ -122,7 +124,14 @@ def main() -> None:
         sc = StandardScaler().fit(X[tr])
         clf = LogisticRegression(C=args.C, class_weight="balanced", max_iter=1000).fit(sc.transform(X[tr]), y[tr])
         pred[te] = clf.predict(sc.transform(X[te]))
+        prob[te] = clf.predict_proba(sc.transform(X[te]))[:, 1]
         coefs.append(clf.coef_[0])
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        # 与 late_fusion 的患者概率向量约定一致:[P(ASD 类=索引0), P(non-ASD)],主线 label 0 = ASD
+        json.dump({p: {"prob": [float(prob[i]), float(1 - prob[i])], "label": int(1 - y[i])}
+                   for i, p in enumerate(pids) if not np.isnan(prob[i])}, open(args.out, "w"), indent=1)
+        print(f"患者级概率已存 {args.out}")
     ok = pred >= 0
     lo, hi = macro_ci(pred[ok], y[ok])
     print(f"\n逻辑回归(5 折患者划分, class_weight=balanced, C={args.C}):")
