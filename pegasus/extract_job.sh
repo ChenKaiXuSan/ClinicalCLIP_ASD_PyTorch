@@ -30,7 +30,8 @@ PROMPT="${PROMPT:-generic}"       # 仅 qwen3vl:models/vlm_prompts.py 的预设�
 VLM_TAG="${VLM_TAG:-siglip2_so400m_224}"
 OUT_DIR="${OUT_DIR:-${DATA_ROOT}/vlm_cache/${VLM_TAG}}"
 CHUNK="${CHUNK:-64}"              # qwen3vl 建议 16(= 2 段 x 8 帧一次前向)
-DTYPE="${DTYPE:-float32}"         # qwen3vl 权重精度;bf16 隐状态误差可达 20%,H100 放得下 8B fp32
+DTYPE="${DTYPE:-float32}"         # qwen3vl 权重精度;GPU 上 bf16 与 fp32 一致(tests/check_qwen_batch.py)
+VISUAL_PROMPT="${VISUAL_PROMPT:-}" # box_lumbar:帧上按骨架画腰椎骨盆红框(方案 1 视觉提示)
 
 cd "${REPO_ROOT}"
 mkdir -p logs/pegasus
@@ -42,5 +43,5 @@ python scripts/extract_vlm_features.py \
     --backend "${BACKEND}" --model "${MODEL}" \
     --img-size "${IMG_SIZE}" --num-samples "${NUM_SAMPLES}" \
     --out-dir "${OUT_DIR}" \
-    --prompt "${PROMPT}" --chunk "${CHUNK}" --dtype "${DTYPE}" \
+    --prompt "${PROMPT}" --chunk "${CHUNK}" --dtype "${DTYPE}" --visual-prompt "${VISUAL_PROMPT}" \
     --device cuda:0 --num-workers 8 ${EXTRA_ARGS:-}

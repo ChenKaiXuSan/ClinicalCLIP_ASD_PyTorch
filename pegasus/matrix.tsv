@@ -107,3 +107,11 @@ qwen_scale	Q0b_qwen4b_probe_clinical	model.backbone=vlm_probe model.token_backbo
 # 32B 只能 bf16(GPU 上 bf16 与 fp32 一致,见 tests/check_qwen_batch.py)
 qwen_scale	Q0_qwen32b_probe_generic	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_32b_448_generic
 qwen_scale	Q0b_qwen32b_probe_clinical	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=pooled data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical
+
+# ============ 方案 1:视觉提示 —— 帧上按骨架画腰椎骨盆红框(患者无关)再抽 8B 特征 ============
+# 与 qwen 组的差别只在输入帧有没有红框、指令是否指向框。回答"视觉标记能否把 VLM 的注意力和特征
+# 引向医生关注的区域"。缓存 CACHE:qwen3vl_8b_448_box_{clinical,generic}(VISUAL_PROMPT=box_lumbar)。
+qwen_box	Q1box_qwen_concept_clinical	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_clinical
+qwen_box	Q1box_qwen_concept_generic	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_generic
+qwen_box	Q0mbox_qwen_probe_clinical_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_clinical
+qwen_box	Q0mbox_qwen_probe_generic_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_8b_448_box_generic

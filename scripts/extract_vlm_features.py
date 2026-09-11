@@ -73,6 +73,8 @@ def main() -> None:
     parser.add_argument("--prompt", default="generic",
                         help="qwen3vl 的指令:models/vlm_prompts.py 里的预设名或原文。缓存目录应含 prompt 名")
     parser.add_argument("--layer", type=int, default=-1, help="qwen3vl 取第几层隐状态,-1 为末层")
+    parser.add_argument("--visual-prompt", default="", choices=["", "box_lumbar"],
+                        help="帧上按骨架画腰椎骨盆红框(视觉提示),需要 clinical_CLIP_dataset 的 doctor_result/seg_skeleton_pkl")
     parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"],
                         help="qwen3vl 权重精度。bf16 经 28 层累积后隐状态相对误差可达 20%%(tests/check_qwen_batch.py),"
                              "H100 80GB 放得下 8B 的 fp32(32GB),默认 fp32")
@@ -116,6 +118,7 @@ def main() -> None:
         "prompt": get_prompt(args.prompt) if args.backend == "qwen3vl" else None,
         "layer": args.layer,
         "weights_dtype": args.dtype if args.backend == "qwen3vl" else "float32+fp16 autocast",
+        "visual_prompt": args.visual_prompt or None,
     }
     json.dump(manifest, open(out_dir / "manifest.json", "w"), indent=2, ensure_ascii=False)
 
@@ -123,9 +126,16 @@ def main() -> None:
         return
 
     # dataset 输出 [0,1] 的 (n_chunks,3,T,S,S);S 取 img_size,编码器内部不再缩放。
-    # 不带 attn_map:抽特征不需要医生标注
+    # 默认不带 attn_map(抽特征不需要医生标注);视觉提示需要骨架关键点定位框
+    med = None
+    if args.visual_prompt:
+        from dataloader.med_attn_map import MedAttnMap
+
+        info = root / "clinical_CLIP_dataset"
+        med = MedAttnMap(str(info / "doctor_result"), str(info / "seg_skeleton_pkl"))
     dataset = LabeledGaitVideoDataset(
         "extract", todo, img_size=args.img_size, num_samples=args.num_samples,
+        attn_map=med, visual_prompt=args.visual_prompt,
     )
     loader = DataLoader(
         dataset, batch_size=1, num_workers=args.num_workers, collate_fn=collate_keep,

@@ -55,6 +55,8 @@ def main() -> None:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"], help="bf16 隐状态误差可达 20%%,默认 fp32")
     parser.add_argument("--out", default=None)
+    parser.add_argument("--visual-prompt", default="", choices=["", "box_lumbar"],
+                        help="帧上画腰椎骨盆红框后再问;回答视觉标记能否把注意力引到医生区域")
     args = parser.parse_args()
 
     root = Path(args.root_path)
@@ -68,12 +70,24 @@ def main() -> None:
     dataset = LabeledGaitVideoDataset(
         "qwen_attn", paths, img_size=args.img_size, num_samples=args.num_samples,
         attn_map=med, region_supervision=True, region_map_size=args.region_map_size,
+        visual_prompt=args.visual_prompt,
     )
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     enc = VLMTokenEncoder(
         "qwen3vl", args.model, hidden_dim=256, img_size=args.img_size,
         attn_implementation="eager", dtype=args.dtype,
     ).to(device).eval()
+    # 有红框时,腰椎骨盆的指令改为指向框
+    region_prompt = {r: f"region_{r}" for r in REGIONS}
+    if args.visual_prompt == "box_lumbar":
+        from models.vlm_prompts import PROMPTS  # noqa: E402
+
+        PROMPTS["region_lumbar_pelvis_box"] = (
+            "You are an orthopedic surgeon assessing a lateral-view walking video of a patient in a gait laboratory. "
+            "A red box on every frame marks the lumbar spine and pelvis. Focus only on the region inside the red box "
+            "and describe how it moves during the gait cycle."
+        )
+        region_prompt["lumbar_pelvis"] = "region_lumbar_pelvis_box"
 
     total = {"qwen": 0.0, "uniform": 0.0}
     weight = 0.0
@@ -85,7 +99,7 @@ def main() -> None:
         target = sample["region_target"].to(device).unsqueeze(0).expand(video.shape[0], -1)
         maps = []
         for r in REGIONS:
-            chunks = [enc.tower.attention_maps(v, f"region_{r}", args.last_layers)
+            chunks = [enc.tower.attention_maps(v, region_prompt[r], args.last_layers)
                       for v in video.split(args.chunk)]
             maps.append(torch.cat(chunks, 0))  # (B, t', h', w')
         attn = torch.stack(maps, dim=1)  # (B, R, t', h', w')
@@ -110,7 +124,7 @@ def main() -> None:
 
     result = {
         "model": args.model, "img_size": args.img_size, "fold": args.fold, "n_videos": len(dataset),
-        "last_layers": args.last_layers,
+        "last_layers": args.last_layers, "visual_prompt": args.visual_prompt or None,
         "attn_align": total["qwen"] / max(weight, 1e-6),
         "attn_align_uniform": total["uniform"] / max(weight, 1e-6),
         "per_region": {r: (v[0] / v[1] if v[1] > 0 else None) for r, v in per_region.items()},

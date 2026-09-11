@@ -20,6 +20,7 @@ DTYPE="${DTYPE:-float32}"
 WHICH="${WHICH:-attn diag}"
 FOLDS="${FOLDS:-0}"; FOLDS="${FOLDS//[,.]/ }"   # qsub -v 里逗号是变量分隔符, 折号用点号: FOLDS=1.2.3.4
 LIMIT="${LIMIT:-0}"
+VISUAL_PROMPT="${VISUAL_PROMPT:-}"   # box_lumbar: 只对 attn 生效
 
 cd "${REPO_ROOT}"
 mkdir -p logs/pegasus logs/qwen_analysis
@@ -36,7 +37,7 @@ for fold in ${FOLDS}; do
         esac
         echo "== ${w} fold ${fold} $(date '+%F %T')"
         python "${script}" --root-path "${DATA_ROOT}" --model "${MODEL}" --img-size "${IMG_SIZE}" \
-            --dtype "${DTYPE}" --fold "${fold}" --limit "${LIMIT}" \
+            --dtype "${DTYPE}" --fold "${fold}" --limit "${LIMIT}" $( [[ "${w}" == attn && -n "${VISUAL_PROMPT}" ]] && echo "--visual-prompt ${VISUAL_PROMPT}" ) \
             --out "logs/qwen_analysis/${w}_${tag}_fold${fold}.json" 2>&1 | grep --line-buffered -vE "Warning|warn"
     done
 done

@@ -128,6 +128,39 @@ def _decode_selected(video_path: str, wanted: torch.Tensor) -> torch.Tensor:
     return torch.from_numpy(stacked).permute(0, 3, 1, 2).contiguous()
 
 
+def draw_lumbar_box(video: torch.Tensor, pose: torch.Tensor, thickness: int = 3,
+                    color=(1.0, 0.0, 0.0)) -> torch.Tensor:
+    """在每帧上画出腰椎骨盆区域的红框 —— 给 VLM 的**视觉提示**。
+
+    位置只用骨架关键点(髋 11/12,肩 5/6),不用任何医生标注,所以患者无关、无泄漏。
+    框:x 取髋中心 ± max(0.5 躯干长, 0.12 W);y 从髋上方 0.5 躯干长(腰椎)到髋下方 0.35 躯干长(骨盆)。
+    关键点缺失或置信度低的帧不画。
+    video (U,3,S,S) in [0,1];pose (U,17,3) 归一化坐标 + 置信度。
+    """
+    out = video.clone()
+    u, _, h, w = video.shape
+    col = torch.tensor(color, dtype=video.dtype).view(3, 1, 1)
+    for i in range(u):
+        p = pose[i]
+        hips, shoulders = p[[11, 12]], p[[5, 6]]
+        if (hips[:, 2] < 0.3).any() or (shoulders[:, 2] < 0.3).any() or (hips[:, :2] < 0).any():
+            continue
+        hx, hy = float(hips[:, 0].mean() * w), float(hips[:, 1].mean() * h)
+        sy = float(shoulders[:, 1].mean() * h)
+        torso = max(hy - sy, 0.15 * h)
+        half_w = max(0.5 * torso, 0.12 * w)
+        x0, x1 = int(max(0, hx - half_w)), int(min(w - 1, hx + half_w))
+        y0, y1 = int(max(0, hy - 0.5 * torso)), int(min(h - 1, hy + 0.35 * torso))
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            continue
+        t = thickness
+        out[i, :, y0:y0 + t, x0:x1 + 1] = col
+        out[i, :, max(0, y1 - t + 1):y1 + 1, x0:x1 + 1] = col
+        out[i, :, y0:y1 + 1, x0:x0 + t] = col
+        out[i, :, y0:y1 + 1, max(0, x1 - t + 1):x1 + 1] = col
+    return out
+
+
 class LabeledGaitVideoDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -143,8 +176,14 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         return_pose: bool = False,
         return_video: bool = True,
         feature_cache_dir: str = "",
+        visual_prompt: str = "",
     ) -> None:
         super().__init__()
+
+        # 视觉提示:"box_lumbar" 在帧上按骨架画腰椎骨盆红框(给 VLM 看的先验,患者无关)
+        if visual_prompt not in ("", "box_lumbar"):
+            raise ValueError(f"visual_prompt 只支持 box_lumbar,收到 {visual_prompt}")
+        self._visual_prompt = visual_prompt
 
         self._labeled_videos = labeled_video_paths
         self._experiment = experiment
@@ -226,6 +265,10 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
                 align_corners=False,
                 antialias=True,
             )
+            if self._visual_prompt == "box_lumbar":
+                if self.attn_map is None:
+                    raise RuntimeError("visual_prompt=box_lumbar 需要骨架(attn_map / skeleton_path)")
+                video = draw_lumbar_box(video, self.attn_map.pose_for(video_name, wanted))
             video = video.index_select(0, inverse).view(
                 n_chunks, self._num_samples, *video.shape[1:]
             )
@@ -311,9 +354,11 @@ def whole_video_dataset(
     return_video: bool = True,
     clip_duration: int = 1,
     feature_cache_dir: str = "",
+    visual_prompt: str = "",
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
         feature_cache_dir=feature_cache_dir,
+        visual_prompt=visual_prompt,
         experiment=experiment,
         labeled_video_paths=dataset_idx,
         img_size=img_size,
