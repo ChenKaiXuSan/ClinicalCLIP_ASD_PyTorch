@@ -334,6 +334,14 @@ class _Qwen3VLVision(nn.Module):
         return torch.stack(maps, dim=0)
 
     @torch.no_grad()
+    def generate(self, video: torch.Tensor, prompt: str, max_new_tokens: int = 128) -> list[str]:
+        """自由生成(角色三:解释生成)。video (b,3,T,S,S) -> b 段文本,贪心解码。"""
+        inputs = self._inputs(video, prompt)
+        out = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        new_tokens = out[:, inputs["input_ids"].shape[1]:]
+        return [t.strip() for t in self.processor.batch_decode(new_tokens, skip_special_tokens=True)]
+
+    @torch.no_grad()
     def answer_logits(self, video: torch.Tensor, prompt: str, candidates: list[str]) -> torch.Tensor:
         """回答首 token 在候选词上的 logit (b, len(candidates)),零样本诊断用。"""
         inputs = self._inputs(video, prompt)
