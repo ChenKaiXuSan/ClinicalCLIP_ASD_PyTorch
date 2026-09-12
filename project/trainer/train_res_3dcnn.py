@@ -74,11 +74,15 @@ class SingleModule(LightningModule):
         # 角色二(VLM 教师):额外回归 VLM 给出的临床属性分数。把 slow_r50 的分类投影换成
         # Identity 拿到 2048 维特征,分类头与辅助头并列;推理时辅助头不参与判决
         self.w_aux = float(getattr(hparams.loss, "aux_weight", 0.0))
-        self.aux_dim = _count_aux(getattr(hparams, "data", None)) if self.w_aux > 0 else 0
+        # 特征级融合:把辅助量(几何属性, 已 z 标准化)直接拼到分类头前的特征上。推理时也要有 aux,
+        # 所以只能配可从数据直接量出的目标(骨架几何量),不能配 VLM 猜的
+        self.aux_concat = bool(getattr(hparams.model, "aux_concat", False))
+        n_aux = _count_aux(getattr(hparams, "data", None))
+        self.aux_dim = n_aux if (self.w_aux > 0 or self.aux_concat) else 0
         if self.aux_dim > 0:
             self.video_cnn.blocks[-1].proj = nn.Identity()
-            self.cls_head = nn.Linear(2048, self.num_classes)
-            self.aux_head = nn.Linear(2048, self.aux_dim)
+            self.cls_head = nn.Linear(2048 + (self.aux_dim if self.aux_concat else 0), self.num_classes)
+            self.aux_head = nn.Linear(2048, self.aux_dim) if self.w_aux > 0 else None
 
         # save the hyperparameters to the file and ckpt
         self.save_hyperparameters()
@@ -90,14 +94,15 @@ class SingleModule(LightningModule):
         self.test_pred_list: List[torch.Tensor] = []
         self.test_label_list: List[torch.Tensor] = []
 
-    def forward(self, x):
-        return self._forward(x)[0]
+    def forward(self, x, aux=None):
+        return self._forward(x, aux)[0]
 
-    def _forward(self, x):
-        """(logits, aux_pred 或 None)。"""
+    def _forward(self, x, aux=None):
+        """(logits, aux_pred 或 None)。aux (B, A) 为特征级拼接的几何量。"""
         out = self.video_cnn(x)
         if self.aux_dim > 0:
-            return self.cls_head(out), self.aux_head(out)
+            feat = torch.cat([out, aux.float()], dim=-1) if self.aux_concat else out
+            return self.cls_head(feat), (self.aux_head(out) if self.aux_head is not None else None)
         return out, None
 
     def _aux_loss(self, aux_pred, batch, logits):
@@ -115,7 +120,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds, aux_pred = self._forward(video)
+        video_preds, aux_pred = self._forward(video, batch.get("aux"))
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         # check shape 
@@ -144,7 +149,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds, aux_pred = self._forward(video)
+        video_preds, aux_pred = self._forward(video, batch.get("aux"))
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         if b == 1:
@@ -169,7 +174,7 @@ class SingleModule(LightningModule):
 
         b, c, t, h, w = video.shape
 
-        video_preds, aux_pred = self._forward(video)
+        video_preds, aux_pred = self._forward(video, batch.get("aux"))
         video_preds_softmax = torch.softmax(video_preds, dim=1)
 
         if b == 1:

@@ -123,3 +123,15 @@ distill	X0_3dcnn_aux	model.backbone=3dcnn data.aux_targets_dir=AUX loss.aux_weig
 distill	X0b_3dcnn_aux0.3	model.backbone=3dcnn data.aux_targets_dir=AUX loss.aux_weight=0.3
 distill	X1_concept_aux	model.backbone=concept data.aux_targets_dir=AUX loss.aux_weight=1.0
 distill	X2_concept_nogr_aux	model.backbone=concept loss.grounding_weight=0 data.aux_targets_dir=AUX loss.aux_weight=1.0
+
+# ============ 几何属性(2D 骨架, 医生标注部位对应的 5 个量)进视频分支 ============
+# 目标目录占位符 AUX_GEOM -> logs/geom_attributes_doctor(trunk_lean/head_forward/shoulder_offset/hip_flexion_max/hip_range)。
+# 几何量单独逻辑回归 0.780、与 A1 决策级融合 0.803(p=0.04);这里检验特征级两种用法:
+#   *_geomaux: 辅助回归目标(教师 = 测量值, 对照 distill 组的 VLM 教师);*_geomcat: 直接拼进分类头(特征级融合)。
+geom	G0_3dcnn_geomaux	model.backbone=3dcnn data.aux_targets_dir=AUX_GEOM loss.aux_weight=1.0
+geom	G0b_3dcnn_geomaux0.3	model.backbone=3dcnn data.aux_targets_dir=AUX_GEOM loss.aux_weight=0.3
+geom	G1_concept_geomaux	model.backbone=concept data.aux_targets_dir=AUX_GEOM loss.aux_weight=1.0
+geom	G2_concept_nogr_geomaux	model.backbone=concept loss.grounding_weight=0 data.aux_targets_dir=AUX_GEOM loss.aux_weight=1.0
+geom	G3_3dcnn_geomcat	model.backbone=3dcnn data.aux_targets_dir=AUX_GEOM model.aux_concat=true
+geom	G4_concept_geomcat	model.backbone=concept data.aux_targets_dir=AUX_GEOM model.aux_concat=true
+geom	G5_concept_nogr_geomcat	model.backbone=concept loss.grounding_weight=0 data.aux_targets_dir=AUX_GEOM model.aux_concat=true

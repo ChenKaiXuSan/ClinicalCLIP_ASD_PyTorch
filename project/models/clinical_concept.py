@@ -224,14 +224,16 @@ class ClinicalConceptNet(nn.Module):
         # 两条臂只差这一个变量。
         self.global_from_raw = bool(getattr(cfg, "concept_global_from_raw", False))
         global_dim = self.backbone.token_dim if self.global_from_raw else self.embed_dim
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(self.embed_dim + global_dim),
-            nn.Linear(self.embed_dim + global_dim, self.num_classes),
-        )
-
-        # 角色二:辅助回归头,预测 VLM 给出的临床属性分数;与分类头共享同一份特征。
-        # 属性数由 data.aux_targets_dir 里的 json 数决定
+        # 辅助量:属性数由 data.aux_targets_dir 里的 json 数决定。
+        # aux_concat=true 时把辅助量(几何属性)拼进分类头输入(特征级融合);
+        # 辅助回归头(角色二)与分类头共享同一份特征,只要 aux_targets_dir 非空就建,权重由 loss.aux_weight 控制
         self.aux_dim = _count_aux(getattr(hparams, "data", None))
+        self.aux_concat = bool(getattr(cfg, "aux_concat", False)) and self.aux_dim > 0
+        cls_in = self.embed_dim + global_dim + (self.aux_dim if self.aux_concat else 0)
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(cls_in),
+            nn.Linear(cls_in, self.num_classes),
+        )
         self.aux_head = (
             nn.Sequential(nn.LayerNorm(self.embed_dim + global_dim),
                           nn.Linear(self.embed_dim + global_dim, self.aux_dim))
@@ -242,6 +244,7 @@ class ClinicalConceptNet(nn.Module):
         self,
         video: Optional[torch.Tensor] = None,
         raw_tokens: Optional[torch.Tensor] = None,
+        aux: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         """video (B,3,T,H,W);或 raw_tokens (B,token_dim,T',h,w) —— 离线缓存的 VLM
         特征,跳过视觉塔。缓存只对 vlm backbone 有意义。"""
@@ -295,7 +298,12 @@ class ClinicalConceptNet(nn.Module):
         global_feat = (raw_tokens if raw_tokens is not None else tokens).mean(dim=(2, 3, 4))
 
         fused = torch.cat([concept_feat, global_feat], dim=-1)
-        logits = self.classifier(fused)
+        if self.aux_concat:
+            if aux is None:
+                raise ValueError("model.aux_concat=true 需要 batch 里有 aux(data.aux_targets_dir)")
+            logits = self.classifier(torch.cat([fused, aux.float()], dim=-1))
+        else:
+            logits = self.classifier(fused)
 
         return {
             "logits": logits,

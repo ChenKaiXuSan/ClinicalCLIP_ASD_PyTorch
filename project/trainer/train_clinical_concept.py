@@ -93,16 +93,18 @@ class ClinicalConceptModule(LightningModule):
 
         self.save_root = hparams.log_path
 
-    def forward(self, video=None, raw_tokens=None) -> Dict[str, torch.Tensor]:
-        return self.model(video, raw_tokens=raw_tokens)
+    def forward(self, video=None, raw_tokens=None, aux=None) -> Dict[str, torch.Tensor]:
+        return self.model(video, raw_tokens=raw_tokens, aux=aux)
 
     def _model_inputs(self, batch) -> dict:
-        """在线编码给 video;离线缓存命中时 batch 里只有 tokens。"""
+        """在线编码给 video;离线缓存命中时 batch 里只有 tokens;aux 是特征级拼接用的几何量。"""
         video = batch.get("video")
         tokens = batch.get("tokens")
+        aux = batch.get("aux")
         return {
             "video": video.detach() if video is not None else None,
             "raw_tokens": tokens.detach() if tokens is not None else None,
+            "aux": aux.detach() if aux is not None else None,
         }
 
     def _maybe_shuffle(self, region_map, region_target):

@@ -108,6 +108,10 @@ model:
   # ---- pose-only baseline (backbone=pose) ----
   pose_hidden_dim: 64
 
+  # 特征级融合:把 data.aux_targets_dir 的辅助量(骨架几何属性, z 标准化)拼进分类头输入。
+  # 推理时也要有 aux,只能配可直接量出的目标(几何量),不能配 VLM 猜的分数
+  aux_concat: false
+
   # ---- VLM token 编码器 (concept 架构的 backbone 可选项, 以及 backbone=vlm_probe) ----
   # resnet3d: slow_r50(既有行为) | vlm: 冻结的 VLM 视觉塔,见 models/vlm_encoder.py
   token_backbone: "resnet3d"
