@@ -57,10 +57,15 @@ def main() -> None:
     args = ap.parse_args()
 
     attr_files = sorted(Path(args.attr_dir).glob("*.json"))
-    attrs = [f.stem for f in attr_files]
+    data = {}
+    for f in attr_files:
+        d = json.load(open(f))
+        # 只认 {video_name: {"scores": [...]}} 结构;目录里混进的其它 json(如患者级概率)跳过
+        if d and all(isinstance(v, dict) and "scores" in v for v in d.values()):
+            data[f.stem] = d
+    attrs = sorted(data)
     if not attrs:
         sys.exit("没有属性结果")
-    data = {a: json.load(open(f)) for a, f in zip(attrs, attr_files)}
     videos = set.intersection(*(set(d) for d in data.values()))
     print(f"属性 {len(attrs)} 个: {attrs}\n视频 {len(videos)} 条(各属性交集)")
 

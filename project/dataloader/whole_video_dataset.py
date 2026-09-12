@@ -132,10 +132,13 @@ def _decode_selected(video_path: str, wanted: torch.Tensor) -> torch.Tensor:
 def _load_aux_targets(aux_dir: str) -> tuple[dict[str, torch.Tensor], list[str]]:
     """读 <aux_dir>/*.json -> {video_name: (n_chunks, A) z 标准化分数}, 属性名按文件名排序。"""
     files = sorted(Path(aux_dir).glob("*.json"))
-    if not files:
-        raise FileNotFoundError(f"辅助目标目录 {aux_dir} 里没有 json")
-    names = [f.stem for f in files]
-    per_attr = [json.load(open(f)) for f in files]
+    # 只认 {video_name: {"scores": [...]}} 结构的文件,目录里混进的其它 json(如患者级概率)跳过
+    loaded = [(f, json.load(open(f))) for f in files]
+    loaded = [(f, d) for f, d in loaded if d and all(isinstance(v, dict) and "scores" in v for v in d.values())]
+    if not loaded:
+        raise FileNotFoundError(f"辅助目标目录 {aux_dir} 里没有属性 json")
+    names = [f.stem for f, _ in loaded]
+    per_attr = [d for _, d in loaded]
     videos = set.intersection(*(set(d) for d in per_attr))
     stats = []
     for d in per_attr:
