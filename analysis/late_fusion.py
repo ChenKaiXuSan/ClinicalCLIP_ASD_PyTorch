@@ -31,12 +31,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from patient_level_stats import build_patient_map, macro_ci  # noqa: E402
 
 
-def patient_probs(exp_root: Path, tag: str, pmap: dict[str, str]) -> dict[str, tuple[np.ndarray, int]]:
+def patient_probs(exp_root: Path, tag: str, pmap: dict[str, str], seed: int = 42) -> dict[str, tuple[np.ndarray, int]]:
     """{患者: (概率向量, 真值)},段级概率按患者均值。"""
     out = {}
     for fold in range(5):
         runs = sorted(
-            {p.parent.parent for p in (exp_root / f"{tag}__f{fold}_s42").rglob("best_preds/*_pred.pt")},
+            {p.parent.parent for p in (exp_root / f"{tag}__f{fold}_s{seed}").rglob("best_preds/*_pred.pt")},
             key=lambda p: p.stat().st_mtime,
         )
         if not runs:
@@ -76,6 +76,7 @@ def main() -> None:
     ap.add_argument("--data-root", required=True)
     ap.add_argument("--pairs", nargs="+", required=True, help="A:B,A 是视频分支,B 是 VLM 分支")
     ap.add_argument("--weights", default="0.5", help="B 分支权重,逗号分隔,如 0.3,0.5,0.7")
+    ap.add_argument("--seed", type=int, default=42, help="logs/train 里实验目录的种子后缀")
     args = ap.parse_args()
 
     pmap = build_patient_map(args.data_root)
@@ -87,7 +88,7 @@ def main() -> None:
         if tag.endswith(".json"):
             d = json.load(open(tag))
             return {p: (np.asarray(v["prob"], dtype=float), int(v["label"])) for p, v in d.items()}
-        return patient_probs(root, tag, pmap)
+        return patient_probs(root, tag, pmap, args.seed)
     print(f"{'A + B':58s} {'A':>6s} {'B':>6s}  " + "  ".join(f"融合w={w:.1f} [95% CI]        A独:融独 p" for w in ws))
     for pair in args.pairs:
         a_tag, b_tag = pair.split(":")
