@@ -80,6 +80,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * select experiment
     if hparams.model.backbone == "3dcnn":
         classification_module = SingleModule(hparams)
+    # * B5:视频 Transformer 基线(TimeSformer, 8 帧 K400 权重),与 B0 共用同一训练模块
+    elif hparams.model.backbone == "timesformer":
+        classification_module = SingleModule(hparams)
     # * compare experiment
     elif hparams.model.backbone == "cnn_lstm":
         classification_module = CNNLstmModule(hparams)

@@ -49,7 +49,15 @@ class PoseModule(LightningModule):
         self.weight_decay = float(getattr(loss_cfg, "weight_decay", 0.001))
         self.num_classes = int(getattr(hparams.model, "model_class_num", 3))
 
-        self.model = PoseSTGCN(hparams)
+        # model.pose_arch: stgcn(默认) / ctrgcn(B6,通道拓扑精化图卷积)
+        arch = str(getattr(hparams.model, "pose_arch", "stgcn"))
+        if arch == "ctrgcn":
+            from models.pose_ctrgcn import PoseCTRGCN
+            self.model = PoseCTRGCN(hparams)
+        elif arch == "stgcn":
+            self.model = PoseSTGCN(hparams)
+        else:
+            raise ValueError(f"未知的 pose_arch: {arch}")
         # 与 concept 一致:torchmetrics 默认 macro,即平衡准确率
         self.metrics = ClassificationMetrics(self.num_classes)
 

@@ -30,6 +30,9 @@ from patient_level_stats import macro_ci  # noqa: E402
 from prior_sparse_lr import DOCTOR_REGIONS, HAND5, Runner, load_bank, macro  # noqa: E402
 
 
+N_JOBS = 8
+
+
 def missing_patients(bank_path: str) -> set:
     bank = pickle.load(open(bank_path, "rb"))
     return {Path(v["json"]).stem.split("-")[0] for v in bank["videos"].values() if v["frac_ok"] == 0}
@@ -45,7 +48,7 @@ def fit_nonlinear(kind, Xs, seg_pat, y, splits, cols, seed=0):
         Xtr, Xte = np.where(np.isnan(Xtr), med, Xtr), np.where(np.isnan(Xte), med, Xte)
         ytr = y[seg_pat[mtr]]
         if kind == "rf":
-            clf = RandomForestClassifier(500, min_samples_leaf=5, class_weight="balanced_subsample", n_jobs=8, random_state=seed)
+            clf = RandomForestClassifier(500, min_samples_leaf=5, class_weight="balanced_subsample", n_jobs=N_JOBS, random_state=seed)
         else:
             clf = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_leaf_nodes=15, class_weight="balanced", random_state=seed)
         clf.fit(Xtr, ytr)
@@ -66,6 +69,8 @@ def main() -> None:
     ap.add_argument("--probs", nargs="*", default=[], help="exclude-missing: 限制到剩余患者重算的已有概率 json")
     ap.add_argument("--out-dir", default="logs/geom_probs/p1")
     ap.add_argument("--exclude-missing", action="store_true", help="nonlinear: 划分与评估都去掉无 3D 结果的患者")
+    ap.add_argument("--n-splits", type=int, default=0, help="nonlinear: 换 N 份随机患者划分(与 p0 repeated-splits 同一生成方式), 报 macro / AUC 均值±std")
+    ap.add_argument("--n-jobs", type=int, default=8)
     args = ap.parse_args()
 
     Xp, Xs, seg_pat, y, pids, feats, regions, splits = load_bank(args.bank, args.data_root, 2)
@@ -77,15 +82,41 @@ def main() -> None:
     ones = np.ones(Xp.shape[1])
 
     if args.cmd == "nonlinear":
+        global N_JOBS
+        N_JOBS = args.n_jobs
         sub = np.arange(len(y))
         if args.exclude_missing:
             miss = missing_patients(args.bank)
             sub = np.array([i for i, p in enumerate(pids) if p not in miss])
             splits = [(np.array([i for i in tr if i in set(sub)]), np.array([i for i in te if i in set(sub)])) for tr, te in splits]
             print(f"去掉无 3D 结果的患者 {len(miss)} 人, 剩余 {len(sub)}")
+        cands = (("全库 1272", np.ones(Xp.shape[1], bool)), ("医生区域", doctor_keep), ("手挑 5 量", hand_keep))
+        if args.n_splits > 0:
+            from sklearn.metrics import roc_auc_score
+            from sklearn.model_selection import StratifiedKFold
+            res = {}
+            for s in range(args.n_splits):
+                skf = StratifiedKFold(5, shuffle=True, random_state=1000 + s)
+                sp = [(sub[tr], sub[te]) for tr, te in skf.split(np.zeros(len(sub)), y[sub])]
+                line = []
+                for kind in ("rf", "hgb"):
+                    for cname, keep in cands:
+                        pred, prob = fit_nonlinear(kind, Xs, seg_pat, y, sp, np.where(keep)[0], seed=s)
+                        k = f"{kind}/{cname.split()[0]}"
+                        res.setdefault(k, {"macro": [], "auc": []})
+                        res[k]["macro"].append(macro(pred[sub], y[sub]))
+                        res[k]["auc"].append(float(roc_auc_score(y[sub], prob[sub])))
+                        line.append(f"{k} {res[k]['macro'][-1]:.3f}/{res[k]['auc'][-1]:.2f}")
+                print(f"  划分 {s + 1}/{args.n_splits}: " + "  ".join(line), flush=True)
+            print(f"\n{args.n_splits} 份随机患者划分, {len(sub)} 人, macro 与 AUC 均值 ± std:")
+            for k, v in res.items():
+                m, a = np.array(v["macro"]), np.array(v["auc"])
+                print(f"  {k:16s} macro {m.mean():.3f} ± {m.std():.3f} [{m.min():.3f}, {m.max():.3f}]   AUC {a.mean():.3f} ± {a.std():.3f}")
+            json.dump(res, open(out / f"nonlinear_repeated{'_nomiss' if args.exclude_missing else ''}.json", "w"), indent=1)
+            return
         print(f"{'模型 / 候选集':40s} {'macro [95% CI]':>22s}")
         for kind in ("rf", "hgb"):
-            for cname, keep in (("全库 1272", np.ones(Xp.shape[1], bool)), ("医生区域", doctor_keep), ("手挑 5 量", hand_keep)):
+            for cname, keep in cands:
                 pred, prob = fit_nonlinear(kind, Xs, seg_pat, y, splits, np.where(keep)[0])
                 report(f"{kind} / {cname}", pred[sub], [], y[sub])
                 save_probs(out / f"{kind}_{cname.split()[0]}_probs.json", pids, prob, y)

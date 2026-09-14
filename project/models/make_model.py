@@ -44,6 +44,9 @@ class MakeVideoModule(nn.Module):
         self.model_class_num = hparams.model.model_class_num
         self.model_depth = hparams.model.model_depth
         self.transfer_learning = hparams.train.transfer_learning
+        # 视频 Transformer 基线(B5):backbone=timesformer 时不走 slow_r50
+        self.backbone = str(getattr(hparams.model, "backbone", "3dcnn"))
+        self.timesformer_name = str(getattr(hparams.model, "timesformer_name", "facebook/timesformer-base-finetuned-k400"))
 
     def initialize_walk_resnet(self, input_channel:int = 3) -> nn.Module:
 
@@ -70,6 +73,9 @@ class MakeVideoModule(nn.Module):
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
 
+        if self.backbone == "timesformer":
+            from models.video_timesformer import TimeSformerVideo
+            return TimeSformerVideo(self.model_class_num, self.timesformer_name)
         if self.model_name == "resnet":
             return self.initialize_walk_resnet()
         else:

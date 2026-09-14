@@ -153,24 +153,31 @@ def main() -> None:
         variants = {"hand5": hand_keep, "hard_doctor": keep_touching(regions, DOCTOR_REGIONS),
                     "strict_doctor": keep_within(regions, DOCTOR_REGIONS), "hard_other": ~keep_touching(regions, DOCTOR_REGIONS),
                     "uniform": np.ones(Xp.shape[1], bool)}
+        from sklearn.metrics import roc_auc_score
         res = {k: [] for k in variants}
         res["hand5_patient"] = []
+        auc = {k: [] for k in res}
+
+        def _auc(prob):
+            p1 = prob[sub] if prob.ndim == 1 else prob[sub][:, 1]
+            return float(roc_auc_score(y[sub], p1))
         for s in range(args.n):
             skf = StratifiedKFold(5, shuffle=True, random_state=1000 + s)
             sp = [(sub[tr], sub[te]) for tr, te in skf.split(np.zeros(len(sub)), y[sub])]
             r_seg = Runner(Xp, Xs, seg_pat, y, sp, Cs, "segment", args.seed)
             r_pat = Runner(Xp, Xs, seg_pat, y, sp, [0.01, 0.03, 0.1, 0.3, 1, 3, 10], "patient", args.seed)
             for k, keep in variants.items():
-                pred, _, _, _ = r_seg.run(ones, keep)
-                res[k].append(macro(pred[sub], y[sub]))
-            pred, _, _, _ = r_pat.run(ones, hand_keep)
-            res["hand5_patient"].append(macro(pred[sub], y[sub]))
-            print(f"  划分 {s + 1}/{args.n}: " + "  ".join(f"{k} {v[-1]:.3f}" for k, v in res.items()), flush=True)
-        print(f"\n{args.n} 份随机患者划分(固定划分上的值: hand5 0.786, hard_doctor 0.803, hard_other 0.697, hand5_patient 0.732):")
+                pred, prob, _, _ = r_seg.run(ones, keep)
+                res[k].append(macro(pred[sub], y[sub])); auc[k].append(_auc(np.asarray(prob)))
+            pred, prob, _, _ = r_pat.run(ones, hand_keep)
+            res["hand5_patient"].append(macro(pred[sub], y[sub])); auc["hand5_patient"].append(_auc(np.asarray(prob)))
+            print(f"  划分 {s + 1}/{args.n}: " + "  ".join(f"{k} {v[-1]:.3f}/{auc[k][-1]:.2f}" for k, v in res.items()), flush=True)
+        print(f"\n{args.n} 份随机患者划分, {len(sub)} 人 (macro 均值 ± std [范围]; AUC 均值 ± std):")
         for k, v in res.items():
-            v = np.array(v)
-            print(f"  {k:14s} {v.mean():.3f} ± {v.std():.3f}  [{v.min():.3f}, {v.max():.3f}]")
-        json.dump({k: [float(x) for x in v] for k, v in res.items()}, open(out / f"repeated_splits{'_nomiss' if args.exclude_missing else ''}.json", "w"), indent=1)
+            v, a = np.array(v), np.array(auc[k])
+            print(f"  {k:14s} {v.mean():.3f} ± {v.std():.3f}  [{v.min():.3f}, {v.max():.3f}]   AUC {a.mean():.3f} ± {a.std():.3f}")
+        json.dump({"macro": {k: [float(x) for x in v] for k, v in res.items()}, "auc": {k: [float(x) for x in v] for k, v in auc.items()}},
+                  open(out / f"repeated_splits{'_nomiss' if args.exclude_missing else ''}_auc.json", "w"), indent=1)
         d = np.array(res["hard_doctor"]) - np.array(res["hard_other"])
         ds = np.array(res["strict_doctor"]) - np.array(res["hard_other"])
         print(f"  逐划分差: 宽松医生 - 非医生 {d.mean():+.3f} ± {d.std():.3f} (正 {int((d > 0).sum())}/{len(d)});"
