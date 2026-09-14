@@ -18,6 +18,8 @@ baseline	B3_pose	model.backbone=pose
 baseline	B3_pose_3d	model.backbone=pose model.pose_in_channels=4 paths.skeleton_path=SKEL3D
 baseline	B4_clip_old	model.backbone=clip
 baseline	B5_timesformer	model.backbone=timesformer
+# ViT 用 CNN 的 1e-4 训练不稳定(val 0.39-0.77 震荡, 测试低于常数); 2e-5 是 ViT 微调的常规量级
+baseline	B5b_timesformer_lr2e5	model.backbone=timesformer loss.lr=2e-5
 baseline	B6_ctrgcn	model.backbone=pose model.pose_arch=ctrgcn
 baseline	B6_ctrgcn_3d	model.backbone=pose model.pose_arch=ctrgcn model.pose_in_channels=4 paths.skeleton_path=SKEL3D
 
