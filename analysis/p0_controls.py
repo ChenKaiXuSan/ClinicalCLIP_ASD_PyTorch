@@ -71,6 +71,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", default="logs/geom_probs/p0")
     ap.add_argument("--strict", action="store_true", help="候选集用严格版(全部地标都在区域集合内), 默认宽松版(至少一个)")
+    ap.add_argument("--exclude-missing", action="store_true", help="repeated-splits: 去掉有视频无 3D 结果的患者(中位数填充行)")
     args = ap.parse_args()
     keep_fn = keep_within if args.strict else keep_touching
     sfx = "_strict" if args.strict else ""
@@ -141,25 +142,32 @@ def main() -> None:
 
     elif args.cmd == "repeated-splits":
         variants = {"hand5": hand_keep, "hard_doctor": keep_touching(regions, DOCTOR_REGIONS),
-                    "strict_doctor": keep_within(regions, DOCTOR_REGIONS), "hard_other": ~keep_touching(regions, DOCTOR_REGIONS)}
+                    "strict_doctor": keep_within(regions, DOCTOR_REGIONS), "hard_other": ~keep_touching(regions, DOCTOR_REGIONS),
+                    "uniform": np.ones(Xp.shape[1], bool)}
+        sub = np.arange(len(y))
+        if args.exclude_missing:
+            import pickle
+            miss = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.bank, "rb"))["videos"].values() if v["frac_ok"] == 0}
+            sub = np.array([i for i, p in enumerate(pids) if p not in miss])
+            print(f"去掉无 3D 结果的患者 {len(miss)} 人, 剩余 {len(sub)}")
         res = {k: [] for k in variants}
         res["hand5_patient"] = []
         for s in range(args.n):
             skf = StratifiedKFold(5, shuffle=True, random_state=1000 + s)
-            sp = [(tr, te) for tr, te in skf.split(np.zeros(len(y)), y)]
+            sp = [(sub[tr], sub[te]) for tr, te in skf.split(np.zeros(len(sub)), y[sub])]
             r_seg = Runner(Xp, Xs, seg_pat, y, sp, Cs, "segment", args.seed)
             r_pat = Runner(Xp, Xs, seg_pat, y, sp, [0.01, 0.03, 0.1, 0.3, 1, 3, 10], "patient", args.seed)
             for k, keep in variants.items():
                 pred, _, _, _ = r_seg.run(ones, keep)
-                res[k].append(macro(pred, y))
+                res[k].append(macro(pred[sub], y[sub]))
             pred, _, _, _ = r_pat.run(ones, hand_keep)
-            res["hand5_patient"].append(macro(pred, y))
+            res["hand5_patient"].append(macro(pred[sub], y[sub]))
             print(f"  划分 {s + 1}/{args.n}: " + "  ".join(f"{k} {v[-1]:.3f}" for k, v in res.items()), flush=True)
         print(f"\n{args.n} 份随机患者划分(固定划分上的值: hand5 0.786, hard_doctor 0.803, hard_other 0.697, hand5_patient 0.732):")
         for k, v in res.items():
             v = np.array(v)
             print(f"  {k:14s} {v.mean():.3f} ± {v.std():.3f}  [{v.min():.3f}, {v.max():.3f}]")
-        json.dump({k: [float(x) for x in v] for k, v in res.items()}, open(out / "repeated_splits.json", "w"), indent=1)
+        json.dump({k: [float(x) for x in v] for k, v in res.items()}, open(out / f"repeated_splits{'_nomiss' if args.exclude_missing else ''}.json", "w"), indent=1)
         d = np.array(res["hard_doctor"]) - np.array(res["hard_other"])
         ds = np.array(res["strict_doctor"]) - np.array(res["hard_other"])
         print(f"  逐划分差: 宽松医生 - 非医生 {d.mean():+.3f} ± {d.std():.3f} (正 {int((d > 0).sum())}/{len(d)});"

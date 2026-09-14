@@ -25,7 +25,7 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from p0_controls import keep_touching, report, save_probs  # noqa: E402
+from p0_controls import keep_touching, keep_within, report, save_probs  # noqa: E402
 from patient_level_stats import macro_ci  # noqa: E402
 from prior_sparse_lr import DOCTOR_REGIONS, HAND5, Runner, load_bank, macro  # noqa: E402
 
@@ -92,7 +92,8 @@ def main() -> None:
         runner = Runner(Xp, Xs, seg_pat, y, sp2, Cs, "segment", 0)
         print(f"\n重训(去掉这些患者), {'候选集':32s} {'macro [95% CI]':>22s}")
         y_sub = y[keep_p]
-        for name, keep in (("hand5", hand_keep), ("hard_doctor", doctor_keep), ("hard_other", ~doctor_keep)):
+        for name, keep in (("hand5", hand_keep), ("hard_doctor(宽松)", doctor_keep), ("strict_doctor(严格)", keep_within(regions, DOCTOR_REGIONS)),
+                           ("uniform(全库)", np.ones(Xp.shape[1], bool)), ("hard_other", ~doctor_keep)):
             pred, prob, sel, _ = runner.run(ones, keep)
             report(f"重训 {name}", pred[keep_p], sel, y_sub)
         if args.probs:
