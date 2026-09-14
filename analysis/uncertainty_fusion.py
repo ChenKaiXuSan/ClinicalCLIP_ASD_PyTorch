@@ -255,11 +255,17 @@ def main() -> None:
     ap.add_argument("--lams", default="0.3,1,3,10")
     ap.add_argument("--out", default=None, help="把每组的患者级门控权重与预测存成 json")
     ap.add_argument("--perm", type=int, default=0, help="置换对照:把离群度特征在患者间随机置换 N 次, 只报阶梯门控")
+    ap.add_argument("--exclude-missing", default=None, help="测量库 bank.pkl 路径: 去掉有视频无 3D 结果的患者(他们的几何量是中位数填充, 离群度≈0 会被门控自动送去视频)")
     args = ap.parse_args()
+    drop = set()
+    if args.exclude_missing:
+        import pickle
+        drop = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.exclude_missing, "rb"))["videos"].values() if v["frac_ok"] == 0}
+        print(f"去掉无 3D 结果的患者 {len(drop)} 人")
 
     pmap = build_patient_map(args.data_root)
     root = Path(args.root)
-    R = geom_reliability(Path(args.attr_dir), pmap)
+    R = {k: v for k, v in geom_reliability(Path(args.attr_dir), pmap).items() if k not in drop}
     lams = [float(x) for x in args.lams.split(",")]
     grid = np.round(np.arange(0, 1.0001, 0.05), 2)
     keys = ["video", "geom", "fixed0.5", "nested_w", "stack", "gate", "step_outl", "step_conf", "posthoc0.7"]

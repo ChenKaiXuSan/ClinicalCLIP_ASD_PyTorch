@@ -71,14 +71,23 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", default="logs/geom_probs/p0")
     ap.add_argument("--strict", action="store_true", help="候选集用严格版(全部地标都在区域集合内), 默认宽松版(至少一个)")
-    ap.add_argument("--exclude-missing", action="store_true", help="repeated-splits: 去掉有视频无 3D 结果的患者(中位数填充行)")
+    ap.add_argument("--exclude-missing", action="store_true", help="去掉有视频无 3D 结果的患者(中位数填充行): 划分与评估都只用剩余患者")
     args = ap.parse_args()
     keep_fn = keep_within if args.strict else keep_touching
-    sfx = "_strict" if args.strict else ""
+    sfx = ("_strict" if args.strict else "") + ("_nomiss" if args.exclude_missing else "")
 
     Xp, Xs, seg_pat, y, pids, feats, regions, splits = load_bank(args.bank, args.data_root, args.class_num)
     Cs = [float(c) for c in args.Cs.split(",")]
+    sub = np.arange(len(y))
+    if args.exclude_missing:
+        import pickle
+        miss = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.bank, "rb"))["videos"].values() if v["frac_ok"] == 0}
+        sub = np.array([i for i, p in enumerate(pids) if p not in miss])
+        splits = [(np.array([i for i in tr if i in set(sub)]), np.array([i for i in te if i in set(sub)])) for tr, te in splits]
+        print(f"去掉无 3D 结果的患者 {len(miss)} 人, 剩余 {len(sub)}")
     runner = Runner(Xp, Xs, seg_pat, y, splits, Cs, args.level, args.seed)
+    y_eval = y[sub]
+    ev = lambda pred: pred[sub]
     ones = np.ones(Xp.shape[1])
     out = Path(args.out_dir)
     doctor_keep = keep_fn(regions, DOCTOR_REGIONS)
@@ -95,13 +104,13 @@ def main() -> None:
         for name, combo in sets.items():
             keep = keep_fn(regions, combo)
             pred, prob, sel, _ = runner.run(ones, keep)
-            report(name, pred, sel, y, f"候选 {int(keep.sum())}")
+            report(name, ev(pred), sel, y_eval, f"候选 {int(keep.sum())}")
             save_probs(out / f"ablate_{name.split('(')[0]}{sfx}_{args.level}_probs.json", pids, prob, y)
 
     elif args.cmd == "random5":
         rng = np.random.default_rng(args.seed)
         pred, prob, sel, _ = runner.run(ones, hand_keep)
-        ref = macro(pred, y)
+        ref = macro(ev(pred), y_eval)
         print(f"手挑 5 量(库内 {int(hand_keep.sum())} 列) 参照: {ref:.3f}")
         pools = {"全库": np.arange(Xp.shape[1]), "医生区域内": np.where(doctor_keep)[0], "非医生区域内": np.where(~doctor_keep)[0]}
         for pname, pool in pools.items():
@@ -110,13 +119,13 @@ def main() -> None:
                 keep = np.zeros(Xp.shape[1], bool)
                 keep[rng.choice(pool, 5, replace=False)] = True
                 p_, _, _, _ = runner.run(ones, keep)
-                ms.append(macro(p_, y))
+                ms.append(macro(ev(p_), y_eval))
                 if (t + 1) % 20 == 0:
                     print(f"  {pname} {t + 1}/{args.n}: 当前均值 {np.mean(ms):.3f}", flush=True)
             ms = np.array(ms)
             print(f"随机 5 量 [{pname}] (n={args.n}): {ms.mean():.3f} ± {ms.std():.3f}  [{ms.min():.3f}, {ms.max():.3f}]  "
                   f"手挑 5 量的分位 {(ms < ref).mean():.2f}  ≥手挑的次数 {(ms >= ref).sum()}", flush=True)
-            np.save(out / f"random5_{pname}_{args.level}.npy", ms)
+            np.save(out / f"random5_{pname}{sfx}_{args.level}.npy", ms)
 
     elif args.cmd == "random-regions":
         rows = []
@@ -125,7 +134,7 @@ def main() -> None:
             if keep.sum() == 0:
                 continue
             pred, prob, sel, _ = runner.run(ones, keep)
-            m = macro(pred, y)
+            m = macro(ev(pred), y_eval)
             rows.append((m, combo, int(keep.sum()), np.mean([len(s) for s in sel])))
             tag = "+".join(combo)
             print(f"  {tag:36s} {m:.3f}  候选 {int(keep.sum()):4d}  选中 {np.mean([len(s) for s in sel]):6.1f}"
@@ -144,12 +153,6 @@ def main() -> None:
         variants = {"hand5": hand_keep, "hard_doctor": keep_touching(regions, DOCTOR_REGIONS),
                     "strict_doctor": keep_within(regions, DOCTOR_REGIONS), "hard_other": ~keep_touching(regions, DOCTOR_REGIONS),
                     "uniform": np.ones(Xp.shape[1], bool)}
-        sub = np.arange(len(y))
-        if args.exclude_missing:
-            import pickle
-            miss = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.bank, "rb"))["videos"].values() if v["frac_ok"] == 0}
-            sub = np.array([i for i, p in enumerate(pids) if p not in miss])
-            print(f"去掉无 3D 结果的患者 {len(miss)} 人, 剩余 {len(sub)}")
         res = {k: [] for k in variants}
         res["hand5_patient"] = []
         for s in range(args.n):
