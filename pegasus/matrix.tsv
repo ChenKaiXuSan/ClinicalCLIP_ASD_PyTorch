@@ -14,6 +14,8 @@ baseline	B0_3dcnn	model.backbone=3dcnn
 baseline	B1_2dcnn	model.backbone=2dcnn
 baseline	B2_cnn_lstm	model.backbone=cnn_lstm
 baseline	B3_pose	model.backbone=pose
+# 3D 关节(SAM-3D-Body)版姿态基线:同一 ST-GCN 吃 (x,y,z,score),骨架 pkl 由 scripts/build_skeleton3d_pkl.py 生成
+baseline	B3_pose_3d	model.backbone=pose model.pose_in_channels=4 paths.skeleton_path=SKEL3D
 baseline	B4_clip_old	model.backbone=clip
 
 # ============ 主方法 ============

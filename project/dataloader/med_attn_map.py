@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 import csv
 import os
 import pickle
+import numpy as np
 import torch
 from torchvision.utils import save_image
 
@@ -209,7 +210,8 @@ class MedAttnMap:
         annotation = self.skeleton_for(video_name)
         num_frames = int(frame_idx.numel())
         if annotation is None:
-            return torch.zeros((num_frames, 17, 3))
+            # 通道数跟随 pkl(2D 为 x,y,score;3D pkl 为 x,y,z,score),否则无骨架的视频会与其它样本拼接失败
+            return torch.zeros((num_frames, 17, self.pose_channels()))
 
         keypoint = torch.as_tensor(annotation["keypoint"], dtype=torch.float32)
         score = torch.as_tensor(annotation["keypoint_score"], dtype=torch.float32)
@@ -218,6 +220,13 @@ class MedAttnMap:
         coords = keypoint[0].index_select(0, idx)  # (F, 17, 2) 归一化坐标
         conf = score[0].index_select(0, idx).unsqueeze(-1)  # (F, 17, 1)
         return torch.cat([coords, conf], dim=-1)
+
+    def pose_channels(self) -> int:
+        """pose_for 的最后一维 = 关键点坐标维数 + 1(置信度),按 pkl 里第一条标注推断。"""
+        if not hasattr(self, "_pose_channels"):
+            first = self.skeleton["annotations"][0]["keypoint"]
+            self._pose_channels = int(np.asarray(first).shape[-1]) + 1
+        return self._pose_channels
 
     def regions_per_doctor(self, video_name: str) -> List[set]:
         """每位医生各自标注的区域集合,不做并集——两位医生只有 45.7% 一致,

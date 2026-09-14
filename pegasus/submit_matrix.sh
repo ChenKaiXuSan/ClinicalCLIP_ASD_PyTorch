@@ -28,6 +28,7 @@ CACHE="${CACHE:-${DATA_ROOT}/vlm_cache/${VLM_TAG}}"
 # 角色二(distill 组):VLM 属性分数目录,占位符 AUX
 AUX="${AUX:-${REPO_ROOT}/logs/qwen_attributes/qwen3-vl-8b-instruct_448}"
 AUX_GEOM="${AUX_GEOM:-${REPO_ROOT}/logs/geom_attributes_doctor}"
+SKEL3D="${SKEL3D:-${DATA_ROOT}/clinical_CLIP_dataset/seg_skeleton_pkl_3d}"   # 3D 骨架 pkl 目录(B3_pose_3d)
 
 GROUP="${GROUP:-all}"        # 逗号分隔,对应 matrix.tsv 第一列;all 表示全部
 # 按实验名精确挑选,逗号分隔。分组是按用途划的,而跨组挑几个配置(比如只给承载论点
@@ -140,6 +141,13 @@ while IFS=$'\t' read -r grp name args; do
             exit 1
         fi
         args="${args//AUX_GEOM/${AUX_GEOM}}"
+    fi
+    if [[ "${args}" == *SKEL3D* ]]; then
+        if [[ ! -f "${SKEL3D}/whole_annotations.pkl" ]]; then
+            echo "ERROR: ${name} 需要 3D 骨架 ${SKEL3D}/whole_annotations.pkl(scripts/build_skeleton3d_pkl.py 生成)。" >&2
+            exit 1
+        fi
+        args="${args//SKEL3D/${SKEL3D}}"
     fi
     if [[ "${args}" == *AUX* ]]; then
         if [[ "$(ls "${AUX}"/*.json 2>/dev/null | wc -l)" -eq 0 ]]; then

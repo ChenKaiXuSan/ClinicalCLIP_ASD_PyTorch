@@ -83,12 +83,14 @@ class PoseSTGCN(nn.Module):
         cfg = hparams.model
         num_classes = int(getattr(cfg, "model_class_num", 3))
         hidden = int(getattr(cfg, "pose_hidden_dim", 64))
+        # 2D 骨架 (x, y, score) 为 3;3D 骨架 pkl(scripts/build_skeleton3d_pkl.py)为 (x, y, z, score) 4
+        in_ch = int(getattr(cfg, "pose_in_channels", 3))
 
         self.register_buffer("adj", build_adjacency())
-        self.data_bn = nn.BatchNorm1d(3 * NUM_JOINTS)
+        self.data_bn = nn.BatchNorm1d(in_ch * NUM_JOINTS)
 
         self.blocks = nn.ModuleList([
-            STGCNBlock(3, hidden),
+            STGCNBlock(in_ch, hidden),
             STGCNBlock(hidden, hidden),
             STGCNBlock(hidden, hidden * 2),
             STGCNBlock(hidden * 2, hidden * 2),
