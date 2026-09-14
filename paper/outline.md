@@ -25,7 +25,7 @@ region-grounded 3D CNN reproduces clinician attention 4× better than Grad-CAM (
 balanced accuracy stays at 0.64–0.66, and end-to-end skeleton models (2D or 3D) are at chance. We instead let the
 annotations decide *what to measure*: the regions clinicians mark (lumbar–pelvis, head, shoulder) define five
 sagittal-plane quantities computed from 3D keypoints, and a logistic regression on these five numbers reaches 0.72
-(10 random patient splits, 67 patients) with AUC 0.85—above every end-to-end model, above five random measurements
+(10 random patient splits, 67 patients) with AUC 0.79—above every end-to-end model, above five random measurements
 (0.60–0.64, 98th–100th percentile) and above four plausible quantities at unmarked regions (0.66), and equal to the
 best data-driven selection over 1,272 candidate measurements (0.73). We then fuse the measurements with the grounded
 video model by an evidence-strength rule—trust the measurements when they deviate from the population norm, defer to
@@ -36,7 +36,7 @@ posture. Clinician attention is most useful as a measurement prior, and its evid
 ## Contributions(4 条)
 
 1. **同一份医生区域标注两种用法的对照**:做监督 → 可验证注意力(4× Grad-CAM)但精度不变;做测量先验 → 精度显著高于所有端到端模型。
-2. **医生注意力定义的 5 个测量**:0.72(换划分)/ AUC 0.85;随机 5 量 0.60–0.64(98–100 分位);未标部位 4 量 0.66;
+2. **医生注意力定义的 5 个测量**:0.72(换划分)/ AUC 0.79(10 份划分;79 人固定划分的 0.85 不再用);随机 5 量 0.60–0.64(98–100 分位);未标部位 4 量 0.66;
    加进未标部位的量反而降(0.69);2D / 3D ST-GCN 随机(0.51–0.54);随机森林 / 梯度提升吃 1272 量 0.73–0.76。
    **简约性**:5 个数 = 1272 个测量上最好的数据驱动选择(0.73–0.74)。
 3. **证据强度门控(方法贡献)**:几何量偏离常模时信几何,否则交给视频;0.751 → 0.794(9 组),嵌套全局 w 0.745、固定 0.5 0.717、
@@ -85,7 +85,7 @@ VLM 线一句话带过(补充材料)。
 | 均匀 L1,1272 量 | 3D 测量 | 0.730±0.023 | |
 | 医生区域内 L1,300 量 | 3D 测量 | 0.743±0.032 | |
 | 未标部位 4 量 + LR | 3D 测量 | 0.660±0.037 | 0.63 |
-| **医生定义的 5 量 + LR** | 3D 测量 | **0.717±0.017** | **0.85** |
+| **医生定义的 5 量 + LR** | 3D 测量 | **0.717±0.017** | **0.79±0.02** |
 | 5 量 + 视频,固定 w=0.5 / 嵌套 w / sigmoid 门控 | 融合 | 0.717 / 0.745 / 0.773 | |
 | **5 量 + 视频,证据门控** | 融合 | **0.794**(M0:**0.819**) | |
 
@@ -119,4 +119,4 @@ VLM 线一句话带过(补充材料)。
 - 出图脚本 `analysis/paper_figs.py`;gate_strata_diag 加 --exclude-missing。
 - 参考文献(`refs.bib` 占位)。
 - 临床合作者确认 5 个量与"头前伸携带证据信号"。
-- 主表 AUC 列补齐 67 人版(`patient_metrics.py` 加患者过滤)。
+- 主表 AUC 列:测量类已改 10 份划分口径(`analysis/attribute_repeated_splits.py`);视频 / 骨架类待 B1–B6 50 轮 × 3 种子跑完后用 `patient_metrics.py --exclude-missing` 按种子补齐。
