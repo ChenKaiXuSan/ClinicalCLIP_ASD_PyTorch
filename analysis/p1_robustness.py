@@ -65,6 +65,7 @@ def main() -> None:
     ap.add_argument("--Cs", default="0.01,0.1")
     ap.add_argument("--probs", nargs="*", default=[], help="exclude-missing: 限制到剩余患者重算的已有概率 json")
     ap.add_argument("--out-dir", default="logs/geom_probs/p1")
+    ap.add_argument("--exclude-missing", action="store_true", help="nonlinear: 划分与评估都去掉无 3D 结果的患者")
     args = ap.parse_args()
 
     Xp, Xs, seg_pat, y, pids, feats, regions, splits = load_bank(args.bank, args.data_root, 2)
@@ -76,11 +77,17 @@ def main() -> None:
     ones = np.ones(Xp.shape[1])
 
     if args.cmd == "nonlinear":
+        sub = np.arange(len(y))
+        if args.exclude_missing:
+            miss = missing_patients(args.bank)
+            sub = np.array([i for i, p in enumerate(pids) if p not in miss])
+            splits = [(np.array([i for i in tr if i in set(sub)]), np.array([i for i in te if i in set(sub)])) for tr, te in splits]
+            print(f"去掉无 3D 结果的患者 {len(miss)} 人, 剩余 {len(sub)}")
         print(f"{'模型 / 候选集':40s} {'macro [95% CI]':>22s}")
         for kind in ("rf", "hgb"):
             for cname, keep in (("全库 1272", np.ones(Xp.shape[1], bool)), ("医生区域", doctor_keep), ("手挑 5 量", hand_keep)):
                 pred, prob = fit_nonlinear(kind, Xs, seg_pat, y, splits, np.where(keep)[0])
-                report(f"{kind} / {cname}", pred, [], y)
+                report(f"{kind} / {cname}", pred[sub], [], y[sub])
                 save_probs(out / f"{kind}_{cname.split()[0]}_probs.json", pids, prob, y)
 
     elif args.cmd == "exclude-missing":

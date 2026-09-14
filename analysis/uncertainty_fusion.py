@@ -181,6 +181,9 @@ def step_gate_fit(key_tr, Pv, Pg, y, grid_q=(0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.
     return best[1:]
 
 
+GRID_Q = (0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5)
+
+
 def run_one(V: dict, G: dict, R: dict, lams, grid, seed_inner=0, light=False, perm_seed=None):
     """light=True 只算阶梯门控与固定/嵌套对照(跳过 sigmoid 门控和堆叠);perm_seed 置换离群度特征(对照)。"""
     pids = sorted(set(V) & set(G) & set(R))
@@ -234,7 +237,7 @@ def run_one(V: dict, G: dict, R: dict, lams, grid, seed_inner=0, light=False, pe
             pred["gate"][te] = fuse(Pv[te], Pg[te], wg[te]).argmax(1)
         # 阶梯门控:单个可靠性特征 + 阈值 + 两档权重,全部在训练折上选
         for name, key in (("step_outl", outl), ("step_conf", confg)):
-            thr, wl, wh = step_gate_fit(key[tr], Pv[tr], Pg[tr], y[tr])
+            thr, wl, wh = step_gate_fit(key[tr], Pv[tr], Pg[tr], y[tr], grid_q=GRID_Q)
             if name == "step_outl":
                 chosen_step.append((round(thr, 2), wl, wh))
             pred[name][te] = fuse(Pv[te], Pg[te], np.where(key[te] < thr, wl, wh)).argmax(1)
@@ -255,8 +258,12 @@ def main() -> None:
     ap.add_argument("--lams", default="0.3,1,3,10")
     ap.add_argument("--out", default=None, help="把每组的患者级门控权重与预测存成 json")
     ap.add_argument("--perm", type=int, default=0, help="置换对照:把离群度特征在患者间随机置换 N 次, 只报阶梯门控")
+    ap.add_argument("--grid-q", default=None, help="阶梯门控的分位网格, 逗号分隔; 单个值 = 固定阈值(敏感性分析)")
     ap.add_argument("--exclude-missing", default=None, help="测量库 bank.pkl 路径: 去掉有视频无 3D 结果的患者(他们的几何量是中位数填充, 离群度≈0 会被门控自动送去视频)")
     args = ap.parse_args()
+    global GRID_Q
+    if args.grid_q:
+        GRID_Q = tuple(float(x) for x in args.grid_q.split(","))
     drop = set()
     if args.exclude_missing:
         import pickle

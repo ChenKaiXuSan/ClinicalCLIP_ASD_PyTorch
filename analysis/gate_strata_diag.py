@@ -35,9 +35,15 @@ def main() -> None:
     ap.add_argument("--geom", nargs="+", required=True)
     ap.add_argument("--attr-dir", default="logs/geom_attributes_3d_doctor")
     ap.add_argument("--by", default="outl_g", choices=["outl_g", "conf_g", "miss_g"])
+    ap.add_argument("--exclude-missing", default=None, help="bank.pkl 路径: 去掉无 3D 结果的患者")
     args = ap.parse_args()
     pmap = build_patient_map(args.data_root)
     R = geom_reliability(Path(args.attr_dir), pmap)
+    if args.exclude_missing:
+        import pickle
+        drop = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.exclude_missing, "rb"))["videos"].values() if v["frac_ok"] == 0}
+        R = {k: v for k, v in R.items() if k not in drop}
+        print(f"去掉无 3D 结果的患者 {len(drop)} 人")
     for gpath in args.geom:
         G = load_geom(gpath)
         print(f"\n===== 几何分支 {Path(gpath).stem}, 按 {args.by} 分三档(低 / 中 / 高), 每档: 视频 / 几何 / 融合0.5 的准确率, n")

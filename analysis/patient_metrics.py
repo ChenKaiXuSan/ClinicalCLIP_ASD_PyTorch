@@ -27,17 +27,17 @@ from late_fusion import patient_probs  # noqa: E402
 from patient_level_stats import build_patient_map  # noqa: E402
 
 
-def load_json(path):
+def load_json(path, drop=()):
     d = json.load(open(path))
-    pids = sorted(d)
+    pids = [p for p in sorted(d) if p not in drop]
     P = np.array([d[p]["prob"][0] for p in pids])  # P(ASD) (索引 0 = ASD)
     y = np.array([int(d[p]["label"] == 0) for p in pids])  # ASD -> 1
     return P, y
 
 
-def load_tag(root, tag, pmap, seed):
+def load_tag(root, tag, pmap, seed, drop=()):
     d = patient_probs(Path(root), tag, pmap, seed)
-    pids = sorted(d)
+    pids = [p for p in sorted(d) if p not in drop]
     P = np.array([d[p][0][0] for p in pids])
     y = np.array([int(d[p][1] == 0) for p in pids])
     return P, y
@@ -70,12 +70,17 @@ def main():
     ap.add_argument("--root", default="logs/train")
     ap.add_argument("--data-root", default=None)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--exclude-missing", default=None, help="bank.pkl 路径: 去掉无 3D 结果的患者后再算")
     args = ap.parse_args()
-    runs = {Path(f).stem.replace("_probs", ""): load_json(f) for f in args.files}
+    drop = set()
+    if args.exclude_missing:
+        import pickle
+        drop = {Path(v["json"]).stem.split("-")[0] for v in pickle.load(open(args.exclude_missing, "rb"))["videos"].values() if v["frac_ok"] == 0}
+    runs = {Path(f).stem.replace("_probs", ""): load_json(f, drop) for f in args.files}
     if args.tags:
         pmap = build_patient_map(args.data_root)
         for t in args.tags:
-            runs[f"{t}_s{args.seed}"] = load_tag(args.root, t, pmap, args.seed)
+            runs[f"{t}_s{args.seed}"] = load_tag(args.root, t, pmap, args.seed, drop)
     print(f"{'配置':44s} {'n':>3s} {'平衡准确率':>20s} {'AUC':>20s} {'敏感度(ASD)':>20s} {'特异度(non-ASD)':>20s}")
     for name, (P, y) in runs.items():
         m, ci = metrics(P, y), boot(P, y)
