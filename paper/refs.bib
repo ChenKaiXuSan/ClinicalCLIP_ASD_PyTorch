@@ -1,6 +1,182 @@
-% 参考文献待补
-@misc{placeholder,
-  title={Placeholder},
-  author={Anonymous},
-  year={2026}
+% 参考文献。标 "TODO verify" 的条目是我凭记忆写的关键信息不全或不确定,投稿前逐条核对(DOI / 页码 / 作者顺序)。
+% 临床类(ASD 步态、矢状面代偿)最好由临床合作者给出他们常引的 3–5 篇。
+
+% ---------------------------------------------------------------- 临床:成人脊柱畸形、矢状面平衡、步态
+@article{schwab2012srs,
+  title   = {Scoliosis {R}esearch {S}ociety--{S}chwab adult spinal deformity classification: a validation study},
+  author  = {Schwab, Frank and Ungar, Benjamin and Blondel, Benjamin and Buchowski, Jacob and Coe, Jeffrey and Deinlein, Donald and DeWald, Christopher and Mehdian, Hossein and Shaffrey, Christopher and Tribus, Clifford and Lafage, Virginie},
+  journal = {Spine},
+  volume  = {37},
+  number  = {12},
+  pages   = {1077--1082},
+  year    = {2012}
+}
+@article{glassman2005sagittal,
+  title   = {The impact of positive sagittal balance in adult spinal deformity},
+  author  = {Glassman, Steven D. and Bridwell, Keith and Dimar, John R. and Horton, William and Berven, Sigurd and Schwab, Frank},
+  journal = {Spine},
+  volume  = {30},
+  number  = {18},
+  pages   = {2024--2029},
+  year    = {2005}
+}
+@article{TODO_asd_gait_1,
+  title   = {TODO verify: gait analysis in adult spinal deformity (trunk inclination / compensatory pelvic retroversion / hip-knee flexion during walking)},
+  author  = {TODO},
+  journal = {TODO (Spine / European Spine Journal / Gait \& Posture)},
+  year    = {TODO},
+  note    = {临床合作者提供:ASD 患者步行时躯干前倾、骨盆后倾与髋膝屈曲代偿的文献 2–3 篇}
+}
+@article{TODO_dhs_gait,
+  title   = {TODO verify: gait characteristics of dropped head syndrome / cervical kyphosis},
+  author  = {TODO},
+  journal = {TODO},
+  year    = {TODO},
+  note    = {用于解释 head\_forward 单独方向反、与躯干联合才有信息:DHS 低头 vs ASD 躯干前倾}
+}
+
+% ---------------------------------------------------------------- 视频 / 骨架模型
+@inproceedings{feichtenhofer2019slowfast,
+  title     = {{SlowFast} networks for video recognition},
+  author    = {Feichtenhofer, Christoph and Fan, Haoqi and Malik, Jitendra and He, Kaiming},
+  booktitle = {ICCV},
+  year      = {2019}
+}
+@inproceedings{bertasius2021timesformer,
+  title     = {Is space-time attention all you need for video understanding?},
+  author    = {Bertasius, Gedas and Wang, Heng and Torresani, Lorenzo},
+  booktitle = {ICML},
+  year      = {2021}
+}
+@article{kay2017kinetics,
+  title   = {The {K}inetics human action video dataset},
+  author  = {Kay, Will and Carreira, Joao and Simonyan, Karen and Zhang, Brian and Hillier, Chloe and Vijayanarasimhan, Sudheendra and Viola, Fabio and Green, Tim and Back, Trevor and Natsev, Paul and Suleyman, Mustafa and Zisserman, Andrew},
+  journal = {arXiv preprint arXiv:1705.06950},
+  year    = {2017}
+}
+@inproceedings{yan2018stgcn,
+  title     = {Spatial temporal graph convolutional networks for skeleton-based action recognition},
+  author    = {Yan, Sijie and Xiong, Yuanjun and Lin, Dahua},
+  booktitle = {AAAI},
+  year      = {2018}
+}
+@inproceedings{chen2021ctrgcn,
+  title     = {Channel-wise topology refinement graph convolution for skeleton-based action recognition},
+  author    = {Chen, Yuxin and Zhang, Ziqi and Yuan, Chunfeng and Li, Bing and Deng, Ying and Hu, Weiming},
+  booktitle = {ICCV},
+  year      = {2021}
+}
+@inproceedings{tong2022videomae,
+  title     = {{VideoMAE}: masked autoencoders are data-efficient learners for self-supervised video pre-training},
+  author    = {Tong, Zhan and Song, Yibing and Wang, Jue and Wang, Limin},
+  booktitle = {NeurIPS},
+  year      = {2022}
+}
+@misc{TODO_sam3dbody,
+  title   = {TODO verify: {SAM} 3{D} {B}ody -- promptable 3D human mesh recovery (Meta AI, 2025)},
+  author  = {TODO},
+  year    = {2025},
+  note    = {核对官方技术报告的作者与标题;本文 3D 关节来自其 pred\_keypoints\_3d / MHR 关节}
+}
+@misc{TODO_yolov8pose,
+  title   = {TODO verify: {YOLOv8} (Ultralytics) pose estimation},
+  author  = {Jocher, Glenn and others},
+  year    = {2023},
+  note    = {2D 骨架来源;引 Ultralytics 仓库或其文档}
+}
+
+% ---------------------------------------------------------------- 可解释性、概念瓶颈、先验
+@inproceedings{selvaraju2017gradcam,
+  title     = {{Grad-CAM}: visual explanations from deep networks via gradient-based localization},
+  author    = {Selvaraju, Ramprasaath R. and Cogswell, Michael and Das, Abhishek and Vedantam, Ramakrishna and Parikh, Devi and Batra, Dhruv},
+  booktitle = {ICCV},
+  year      = {2017}
+}
+@inproceedings{koh2020cbm,
+  title     = {Concept bottleneck models},
+  author    = {Koh, Pang Wei and Nguyen, Thao and Tang, Yew Siang and Mussmann, Stephen and Pierson, Emma and Kim, Been and Liang, Percy},
+  booktitle = {ICML},
+  year      = {2020}
+}
+@article{rudin2019stop,
+  title   = {Stop explaining black box machine learning models for high stakes decisions and use interpretable models instead},
+  author  = {Rudin, Cynthia},
+  journal = {Nature Machine Intelligence},
+  volume  = {1},
+  number  = {5},
+  pages   = {206--215},
+  year    = {2019}
+}
+@inproceedings{radford2021clip,
+  title     = {Learning transferable visual models from natural language supervision},
+  author    = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and Mishkin, Pamela and Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
+  booktitle = {ICML},
+  year      = {2021}
+}
+
+% ---------------------------------------------------------------- 特征选择、融合、统计
+@article{tibshirani1996lasso,
+  title   = {Regression shrinkage and selection via the lasso},
+  author  = {Tibshirani, Robert},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  volume  = {58},
+  number  = {1},
+  pages   = {267--288},
+  year    = {1996}
+}
+@article{guyon2003feature,
+  title   = {An introduction to variable and feature selection},
+  author  = {Guyon, Isabelle and Elisseeff, Andr{\'e}},
+  journal = {Journal of Machine Learning Research},
+  volume  = {3},
+  pages   = {1157--1182},
+  year    = {2003}
+}
+@article{kittler1998combining,
+  title   = {On combining classifiers},
+  author  = {Kittler, Josef and Hatef, Mohamad and Duin, Robert P. W. and Matas, Jiri},
+  journal = {IEEE TPAMI},
+  volume  = {20},
+  number  = {3},
+  pages   = {226--239},
+  year    = {1998}
+}
+@article{varma2006nested,
+  title   = {Bias in error estimation when using cross-validation for model selection},
+  author  = {Varma, Sudhir and Simon, Richard},
+  journal = {BMC Bioinformatics},
+  volume  = {7},
+  pages   = {91},
+  year    = {2006}
+}
+@article{mcnemar1947note,
+  title   = {Note on the sampling error of the difference between correlated proportions or percentages},
+  author  = {McNemar, Quinn},
+  journal = {Psychometrika},
+  volume  = {12},
+  number  = {2},
+  pages   = {153--157},
+  year    = {1947}
+}
+@article{pedregosa2011sklearn,
+  title   = {Scikit-learn: machine learning in {P}ython},
+  author  = {Pedregosa, Fabian and Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Michel, Vincent and Thirion, Bertrand and Grisel, Olivier and Blondel, Mathieu and Prettenhofer, Peter and Weiss, Ron and Dubourg, Vincent and Vanderplas, Jake and Passos, Alexandre and Cournapeau, David and Brucher, Matthieu and Perrot, Matthieu and Duchesnay, {\'E}douard},
+  journal = {Journal of Machine Learning Research},
+  volume  = {12},
+  pages   = {2825--2830},
+  year    = {2011}
+}
+
+% ---------------------------------------------------------------- VLM(补充材料)
+@misc{TODO_siglip2,
+  title   = {TODO verify: {SigLIP} 2: multilingual vision-language encoders with improved semantic understanding, localization, and dense features},
+  author  = {Tschannen, Michael and others},
+  year    = {2025},
+  note    = {arXiv 2025;核对作者列表}
+}
+@misc{TODO_qwen3vl,
+  title   = {TODO verify: {Qwen3-VL} technical report},
+  author  = {Qwen Team},
+  year    = {2025},
+  note    = {核对正式标题与 arXiv 号}
 }

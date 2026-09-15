@@ -1,0 +1,277 @@
+{
+ "fig2": {
+  "random5_mean": {
+   "all 1,272": 0.6274792960662526,
+   "clinician regions": 0.6369927536231884,
+   "unmarked regions": 0.5947619047619049
+  },
+  "random5_pct_of_hand": {
+   "all 1,272": 0.98,
+   "clinician regions": 0.99,
+   "unmarked regions": 1.0
+  },
+  "hand5_fixed_segment": 0.768,
+  "bars": {
+   "5 clinician-defined quantities + LR": "0.717±0.017",
+   "4 quantities at unmarked regions": "0.660±0.037",
+   "L1 over doctor regions (300)": "0.742±0.032",
+   "L1 over all 1,272": "0.730±0.023",
+   "L1 over unmarked regions": "0.710±0.043",
+   "random forest 1,272": "0.732±0.019",
+   "gradient boosting 1,272": "0.738±0.022"
+  },
+  "hand5_auc_10split": "0.787±0.016",
+  "other4_auc_10split": "0.679±0.033"
+ },
+ "fig3": {
+  "0": {
+   "video": 0.6919191919191919,
+   "geom": 0.5,
+   "gate": 0.7121212121212122,
+   "n": 198,
+   "asd_frac": 0.8636363636363636
+  },
+  "1": {
+   "video": 0.6262626262626263,
+   "geom": 0.7727272727272727,
+   "gate": 0.7424242424242424,
+   "n": 198,
+   "asd_frac": 0.5909090909090909
+  },
+  "2": {
+   "video": 0.6521739130434783,
+   "geom": 0.9565217391304348,
+   "gate": 0.9565217391304348,
+   "n": 207,
+   "asd_frac": 0.6086956521739131
+  }
+ },
+ "fig4": {
+  "branch": "M0_concept_learned_e50 s2024",
+  "norm_mean": {
+   "trunk_lean": 3.5232287219311695,
+   "shoulder_offset": 0.05981819191570865,
+   "head_forward": 23.47474506533447,
+   "hip_flexion_max": 39.90256054845262,
+   "hip_range": 30.93015717840258
+  },
+  "norm_std": {
+   "trunk_lean": 8.538989946239317,
+   "shoulder_offset": 0.12753048689363064,
+   "head_forward": 17.37678713813158,
+   "hip_flexion_max": 11.561750143678104,
+   "hip_range": 9.537843024245795
+  },
+  "examples": [
+   {
+    "patient": "20180625_1_ASD_lat__V1",
+    "vals": {
+     "trunk_lean": 34.19934285481771,
+     "shoulder_offset": 0.5440920499463876,
+     "head_forward": 59.40327320098877,
+     "hip_flexion_max": 83.55798606872558,
+     "hip_range": 46.95080426534017
+    },
+    "outl": 3.1769923457326703,
+    "thr": 0.52,
+    "w": 0.75,
+    "p_video": 0.402814120054245,
+    "p_geom": 0.985383854655171,
+    "p_fused": 0.8397414210049394,
+    "label_asd": true
+   },
+   {
+    "patient": "20180521_1_ASD_lat__V1",
+    "vals": {
+     "trunk_lean": 2.3075003076188323,
+     "shoulder_offset": 0.0404859034323226,
+     "head_forward": 18.057753868685424,
+     "hip_flexion_max": 36.2783232827223,
+     "hip_range": 30.98653994989759
+    },
+    "outl": 0.3450183072837841,
+    "thr": 0.53,
+    "w": 0.0,
+    "p_video": 0.9707805514335632,
+    "p_geom": 0.47437921122966803,
+    "p_fused": 0.9707805514335632,
+    "label_asd": true
+   },
+   {
+    "patient": "20210706_LCS_lat_V1",
+    "vals": {
+     "trunk_lean": 14.355134100284216,
+     "shoulder_offset": 0.24541793763637543,
+     "head_forward": 23.42157879415548,
+     "hip_flexion_max": 52.65207279853101,
+     "hip_range": 36.279869772353265
+    },
+    "outl": 0.9228547548628242,
+    "thr": 0.53,
+    "w": 1.0,
+    "p_video": 0.48347148299217224,
+    "p_geom": 0.9359172028433288,
+    "p_fused": 0.9359172028433288,
+    "label_asd": false
+   }
+  ]
+ },
+ "table1": {
+  "3D CNN (slow\\_r50, K400)": [
+   "video",
+   "0.644±0.045",
+   "0.670±0.021"
+  ],
+  "TimeSformer-B (K400, 8 frames)": [
+   "video",
+   "0.637±0.055",
+   "0.716±0.020"
+  ],
+  "2D CNN (frame average)": [
+   "video",
+   "0.572±0.044",
+   "0.591±0.071"
+  ],
+  "CNN--LSTM": [
+   "video",
+   "0.529±0.015",
+   "0.582±0.074"
+  ],
+  "CLIP alignment (needs annotation at test)": [
+   "video+annot.",
+   "0.589±0.030",
+   "0.600±0.027"
+  ],
+  "3D CNN + region grounding (Sec.~3.1)": [
+   "video",
+   "0.663±0.030",
+   "0.694±0.091"
+  ],
+  "ST-GCN, 2D skeleton": [
+   "skeleton",
+   "0.513±0.010",
+   "0.563±0.019"
+  ],
+  "ST-GCN, 3D skeleton": [
+   "skeleton",
+   "0.538±0.026",
+   "0.557±0.038"
+  ],
+  "CTR-GCN, 2D skeleton": [
+   "skeleton",
+   "0.491±0.029",
+   "0.521±0.066"
+  ],
+  "CTR-GCN, 3D skeleton": [
+   "skeleton",
+   "0.528±0.065",
+   "0.553±0.078"
+  ],
+  "Random forest, 1,272 measurements": [
+   "3D meas.",
+   "0.732±0.019",
+   "0.736±0.019"
+  ],
+  "Gradient boosting, 1,272 measurements": [
+   "3D meas.",
+   "0.738±0.022",
+   "0.770±0.018"
+  ],
+  "L1 logistic regression, 1,272 measurements": [
+   "3D meas.",
+   "0.730±0.023",
+   "0.760±0.019"
+  ],
+  "L1 logistic regression, 300 within clinician regions": [
+   "3D meas.",
+   "0.742±0.032",
+   "0.755±0.022"
+  ],
+  "4 quantities at unmarked regions + LR": [
+   "3D meas.",
+   "0.660±0.037",
+   "0.679±0.033"
+  ],
+  "\\textbf{5 clinician-defined quantities + LR}": [
+   "3D meas.",
+   "\\textbf{0.717±0.017}",
+   "\\textbf{0.787±0.016}"
+  ],
+  "same 5 quantities from the 2D skeleton": [
+   "2D meas.",
+   "0.739±0.031",
+   "0.785±0.017"
+  ],
+  "fusion_9groups": {
+   "video": 0.6277892799631931,
+   "geom": 0.7505175983436853,
+   "fixed0.5": 0.7167011732229125,
+   "nested_w": 0.7445939728548425,
+   "stack": 0.7311939268461007,
+   "gate": 0.7732344145387623,
+   "step_outl": 0.7939958592132506
+  },
+  "gate_M0": 0.8193581780538302
+ },
+ "table2": {
+  "random5": {
+   "all": "0.627±0.076",
+   "clinician": "0.637±0.074",
+   "unmarked": "0.595±0.069"
+  },
+  "nine": "0.687±0.025",
+  "strict_minus_other": "0.031±0.052",
+  "strict_minus_uniform": "0.012±0.043"
+ },
+ "table3": {
+  "measurement_ablation": {
+   "all five": [
+    "0.717±0.017",
+    "0.787±0.016"
+   ],
+   "$-$ trunk lean": [
+    "0.682±0.017",
+    "0.767±0.016"
+   ],
+   "$-$ shoulder offset": [
+    "0.696±0.023",
+    "0.783±0.014"
+   ],
+   "$-$ head forward": [
+    "0.688±0.031",
+    "0.739±0.017"
+   ],
+   "$-$ max hip flexion": [
+    "0.723±0.020",
+    "0.790±0.015"
+   ],
+   "$-$ hip range": [
+    "0.731±0.010",
+    "0.800±0.010"
+   ],
+   "$-$ lumbar--pelvis group (3)": [
+    "0.713±0.019",
+    "0.793±0.012"
+   ],
+   "trunk lean alone": [
+    "0.707±0.011",
+    "0.778±0.009"
+   ],
+   "head forward alone": [
+    "0.409±0.070",
+    "0.399±0.069"
+   ]
+  },
+  "gate": {
+   "video branch alone": 0.6277892799631931,
+   "5 quantities alone": 0.7505175983436853,
+   "fixed $w{=}0.5$": 0.7167011732229125,
+   "nested global $w$": 0.7445939728548425,
+   "stacking LR": 0.7311939268461007,
+   "sigmoid gate (6 features)": 0.7732344145387623,
+   "\\textbf{evidence gate}": 0.7939958592132506,
+   "evidence gate, deviation permuted (10$\\times$)": 0.742782378651944,
+   "evidence gate with TimeSformer video branch": 0.7853692201518289
+  }
+ }
+}

@@ -1,0 +1,26 @@
+\begin{tabular}{llcc}
+\toprule
+Method & Input & Balanced acc. & AUC \\
+\midrule
+3D CNN (slow\_r50, K400) & video & 0.644±0.045 & 0.670±0.021 \\
+TimeSformer-B (K400, 8 frames) & video & 0.637±0.055 & 0.716±0.020 \\
+2D CNN (frame average) & video & 0.572±0.044 & 0.591±0.071 \\
+CNN--LSTM & video & 0.529±0.015 & 0.582±0.074 \\
+CLIP alignment (needs annotation at test) & video+annot. & 0.589±0.030 & 0.600±0.027 \\
+3D CNN + region grounding (Sec.~3.1) & video & 0.663±0.030 & 0.694±0.091 \\
+ST-GCN, 2D skeleton & skeleton & 0.513±0.010 & 0.563±0.019 \\
+ST-GCN, 3D skeleton & skeleton & 0.538±0.026 & 0.557±0.038 \\
+CTR-GCN, 2D skeleton & skeleton & 0.491±0.029 & 0.521±0.066 \\
+CTR-GCN, 3D skeleton & skeleton & 0.528±0.065 & 0.553±0.078 \\
+Random forest, 1,272 measurements & 3D meas. & 0.732±0.019 & 0.736±0.019 \\
+Gradient boosting, 1,272 measurements & 3D meas. & 0.738±0.022 & 0.770±0.018 \\
+L1 logistic regression, 1,272 measurements & 3D meas. & 0.730±0.023 & 0.760±0.019 \\
+L1 logistic regression, 300 within clinician regions & 3D meas. & 0.742±0.032 & 0.755±0.022 \\
+4 quantities at unmarked regions + LR & 3D meas. & 0.660±0.037 & 0.679±0.033 \\
+\textbf{5 clinician-defined quantities + LR} & 3D meas. & \textbf{0.717±0.017} & \textbf{0.787±0.016} \\
+same 5 quantities from the 2D skeleton & 2D meas. & 0.739±0.031 & 0.785±0.017 \\
+\midrule
+5 quantities + video, fixed $w{=}0.5$ / nested global $w$ / sigmoid gate & fusion & 0.717 / 0.745 / 0.773 & \\
+\textbf{5 quantities + video, evidence gate} & fusion & \textbf{0.794} (grounded video: 0.819) & \\
+\bottomrule
+\end{tabular}
