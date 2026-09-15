@@ -30,6 +30,14 @@ DOCTOR5 = ["trunk_lean", "shoulder_offset", "head_forward", "hip_flexion_max", "
 OTHER4 = ["knee_flexion_max", "step_length", "gait_speed", "arm_swing"]
 EXTRA3D = ["lower_trunk_lean", "spine_curve", "pelvic_obliquity", "trunk_lateral", "lateral_sway"]
 SETS = {"医生部位 5 量": DOCTOR5, "未标部位 4 量": OTHER4, "全部 9 量": DOCTOR5 + OTHER4, "医生 5 + 3D 独有 5": DOCTOR5 + EXTRA3D}
+# 按医生区域整组消融(区域归属见 geom_attributes.py 注释):腰椎骨盆 = 躯干前倾 + 髋屈曲 + 髋幅度;头 = 头前伸;肩 = 肩偏移
+LUMBAR, HEAD, SHOULDER = ["trunk_lean", "hip_flexion_max", "hip_range"], ["head_forward"], ["shoulder_offset"]
+SETS.update({
+    "去腰椎骨盆组(剩 2)": HEAD + SHOULDER, "去头(剩 4)": LUMBAR + SHOULDER, "去肩(剩 4)": LUMBAR + HEAD,
+    "只腰椎骨盆组(3)": LUMBAR, "只头前伸(1)": HEAD, "只肩偏移(1)": SHOULDER, "只躯干前倾(1)": ["trunk_lean"],
+    "只髋屈曲(1)": ["hip_flexion_max"], "只髋幅度(1)": ["hip_range"],
+})
+DEFAULT_SETS = ["医生部位 5 量", "未标部位 4 量", "全部 9 量", "医生 5 + 3D 独有 5"]
 
 
 def load(attr_root: Path, attrs: list[str]):
@@ -57,7 +65,10 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--C", type=float, default=1.0)
     ap.add_argument("--exclude-missing", default=None, help="bank.pkl 路径: 去掉无 3D 结果的患者")
-    ap.add_argument("--sets", nargs="*", default=list(SETS))
+    ap.add_argument("--sets", nargs="*", default=DEFAULT_SETS, help="可选: " + ", ".join(SETS) + "; all = 全部")
+    args_pre, _ = ap.parse_known_args()
+    if args_pre.sets == ["all"]:
+        ap.set_defaults(sets=list(SETS))
     args = ap.parse_args()
 
     miss = set()
