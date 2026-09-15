@@ -79,7 +79,7 @@ def rep_attr(attr_root: Path, attrs: list[str], drop: set, n: int = 10, C: float
 
 
 def pm(v):
-    return f"{np.mean(v):.3f}±{np.std(v):.3f}"
+    return f"{np.mean(v):.3f}$\\pm${np.std(v):.3f}"
 
 
 # ----------------------------------------------------------------------------- 融合(所有图表共用)
@@ -104,28 +104,29 @@ def fig2(out_dir: Path, drop: set, numbers: dict):
     nl = json.load(open(ROOT / "logs/geom_probs/p1_nomiss/nonlinear_repeated_nomiss.json"))
     m5, a5 = rep_attr(ROOT / "logs/geom_attributes_3d", DOCTOR5, drop)
     m4, a4 = rep_attr(ROOT / "logs/geom_attributes_3d", OTHER4, drop)
-    bars = [("5 clinician-defined\nquantities + LR", m5, C_GATE), ("4 quantities at\nunmarked regions", m4, C_GREY),
-            ("L1 over doctor\nregions (300)", rep["macro"]["strict_doctor"], C_GEOM), ("L1 over all\n1,272", rep["macro"]["uniform"], C_GEOM),
-            ("L1 over unmarked\nregions", rep["macro"]["hard_other"], C_GREY), ("random forest\n1,272", nl["rf/全库"]["macro"], C_GEOM),
-            ("gradient boosting\n1,272", nl["hgb/全库"]["macro"], C_GEOM)]
-    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.9), gridspec_kw={"width_ratios": [1.0, 1.5]})
+    bars = [("clinician 5 + LR", m5, C_GATE), ("unmarked 4 + LR", m4, C_GREY),
+            ("L1, clinician regions", rep["macro"]["strict_doctor"], C_GEOM), ("L1, all 1,272", rep["macro"]["uniform"], C_GEOM),
+            ("L1, unmarked regions", rep["macro"]["hard_other"], C_GREY), ("RF, all 1,272", nl["rf/全库"]["macro"], C_GEOM),
+            ("GB, all 1,272", nl["hgb/全库"]["macro"], C_GEOM)]
+    fig, axes = plt.subplots(1, 2, figsize=(4.8, 1.8), gridspec_kw={"width_ratios": [1.0, 1.35]})
     ax = axes[0]
     bins = np.linspace(0.45, 0.85, 25)
     for (k, v), c in zip(rnd.items(), ("#7F7F7F", "#BCBD22", "#C7C7C7")):
-        ax.hist(v, bins=bins, alpha=0.5, color=c, label=f"random 5 from {k}")
+        ax.hist(v, bins=bins, alpha=0.5, color=c, label=f"random 5, {k}")
     ax.axvline(hand_fixed, color=C_GATE, lw=1.8, ls="--")
-    ax.text(hand_fixed + 0.006, ax.get_ylim()[1] * 0.55, "five clinician-\ndefined\nquantities", ha="left", va="center", fontsize=6.5, color=C_GATE)
-    ax.set_xlabel("balanced accuracy (fixed split, 67 patients)"); ax.set_ylabel("count (100 draws each)")
-    ax.legend(fontsize=6, loc="upper left", frameon=False)
-    ax.set_title("(a) random vs. clinician-defined five", fontsize=8, loc="left")
+    ax.set_xlabel("balanced accuracy (fixed split)", fontsize=7); ax.set_ylabel("draws (100 per pool)", fontsize=7)
+    ax.tick_params(labelsize=6.5)
+    ax.legend(fontsize=5.5, loc="upper left", frameon=False)
+    ax.set_title("(a) random five vs. clinician five (dashed)", fontsize=7, loc="left")
     ax = axes[1]
     x = np.arange(len(bars))
     ax.bar(x, [np.mean(v) for _, v, _ in bars], yerr=[np.std(v) for _, v, _ in bars], color=[c for _, _, c in bars], capsize=2, width=0.7)
-    ax.set_xticks(x); ax.set_xticklabels([n.replace("\n", " ") for n, _, _ in bars], fontsize=6, rotation=25, ha="right")
-    ax.set_ylim(0.55, 0.82); ax.set_ylabel("balanced accuracy\n(10 random patient splits)")
+    ax.set_xticks(x); ax.set_xticklabels([n for n, _, _ in bars], fontsize=5.5, rotation=32, ha="right", rotation_mode="anchor")
+    ax.tick_params(axis="y", labelsize=6.5)
+    ax.set_ylim(0.55, 0.82); ax.set_ylabel("balanced accuracy\n(10 random splits)", fontsize=7)
     ax.axhline(np.mean(m5), color=C_GATE, lw=0.8, ls=":")
-    ax.set_title("(b) selection over 1,272 candidates does not beat five", fontsize=8, loc="left")
-    fig.tight_layout(); fig.savefig(out_dir / "fig2_selection.pdf"); fig.savefig(out_dir / "fig2_selection.png"); plt.close(fig)
+    ax.set_title("(b) selection over 1,272 candidates", fontsize=7, loc="left")
+    fig.tight_layout(); fig.savefig(out_dir / "fig2_selection.pdf", bbox_inches="tight", pad_inches=0.02); fig.savefig(out_dir / "fig2_selection.png", bbox_inches="tight"); plt.close(fig)
     numbers["fig2"] = {"random5_mean": {k: float(v.mean()) for k, v in rnd.items()},
                        "random5_pct_of_hand": {k: float((v < hand_fixed).mean()) for k, v in rnd.items()},
                        "hand5_fixed_segment": hand_fixed, "bars": {n.replace("\n", " "): pm(v) for n, v, _ in bars},
@@ -143,7 +144,7 @@ def fig3(out_dir: Path, runs: dict, numbers: dict):
         for k in range(3):
             m = band == k
             tot[k] += [(pr["video"][m] == y[m]).sum(), (pr["geom"][m] == y[m]).sum(), (pr["step_outl"][m] == y[m]).sum(), m.sum(), (y[m] == 0).sum()]
-    fig, ax = plt.subplots(figsize=(3.8, 2.6))
+    fig, ax = plt.subplots(figsize=(3.2, 2.1))
     x = np.arange(3); w = 0.26
     names = ["video branch", "5 measurements", "evidence gate"]
     for j, (c, n) in enumerate(zip((C_VIDEO, C_GEOM, C_GATE), names)):
@@ -152,9 +153,10 @@ def fig3(out_dir: Path, runs: dict, numbers: dict):
         for xi, v in zip(x + (j - 1) * w, vals):
             ax.text(xi, v + 0.01, f"{v:.2f}", ha="center", fontsize=6)
     ax.set_xticks(x); ax.set_xticklabels([f"{t}\n(ASD {tot[k][4] / tot[k][3]:.0%})" for k, t in enumerate(("low", "mid", "high"))], fontsize=7)
-    ax.set_xlabel("deviation of the five measurements from the norm (terciles)", fontsize=7)
-    ax.set_ylabel("patient-level accuracy"); ax.set_ylim(0.3, 1.02); ax.legend(fontsize=6, loc="lower right", frameon=False)
-    fig.tight_layout(); fig.savefig(out_dir / "fig3_gate_strata.pdf"); fig.savefig(out_dir / "fig3_gate_strata.png"); plt.close(fig)
+    ax.set_xlabel("deviation from the norm, $d$ (terciles)", fontsize=7)
+    ax.set_ylabel("patient-level accuracy", fontsize=7); ax.tick_params(axis="y", labelsize=6.5)
+    ax.set_ylim(0.3, 1.02); ax.legend(fontsize=6, loc="lower right", frameon=False)
+    fig.tight_layout(); fig.savefig(out_dir / "fig3_gate_strata.pdf", bbox_inches="tight", pad_inches=0.02); fig.savefig(out_dir / "fig3_gate_strata.png", bbox_inches="tight"); plt.close(fig)
     numbers["fig3"] = {k: {"video": tot[k][0] / tot[k][3], "geom": tot[k][1] / tot[k][3], "gate": tot[k][2] / tot[k][3],
                            "n": int(tot[k][3]), "asd_frac": tot[k][4] / tot[k][3]} for k in range(3)}
     print("fig3 ok")
@@ -206,32 +208,33 @@ def fig4(out_dir: Path, runs: dict, G: dict, R: dict, pmap: dict, numbers: dict,
     ok_v, ok_g, ok_f = pr["video"] == y, pr["geom"] == y, pr["step_outl"] == y
     # 三个例子:几何强证据判对且视频错;几何不离群、视频救回;门控也错的失败例
     cands = [np.where(ok_g & ~ok_v & (outl >= thr_i))[0], np.where(ok_v & ~ok_g & (outl < thr_i) & ok_f)[0], np.where(~ok_f)[0]]
-    titles = ["(a) measurements deviate from the norm:\n     measurements decide (video was wrong)",
-              "(b) measurements unremarkable:\n     video decides (measurements were wrong)",
+    titles = ["(a) deviating measurements decide\n     (video was wrong)",
+              "(b) unremarkable: video decides\n     (measurements were wrong)",
               "(c) failure case"]
     picks = [int(c[np.argsort(-np.abs(outl[c] - thr_i[c]))[0]]) if len(c) else None for c in cands]
-    fig = plt.figure(figsize=(7.2, 3.6))
+    fig = plt.figure(figsize=(4.8, 2.0))
     rows = []
     for j, (i, t) in enumerate(zip(picks, titles)):
         if i is None:
             continue
         p = pids[i]
-        x0 = 0.02 + j * 0.33
-        fig.text(x0, 0.98, t, fontsize=6.5, va="top", weight="bold")
-        ax = fig.add_axes([x0 + 0.09, 0.50, 0.12, 0.38]); _stick(ax, p, attr_json)
+        x0 = 0.01 + j * 0.335
+        fig.text(x0, 0.99, t, fontsize=5.6, va="top", weight="bold")
+        ax = fig.add_axes([x0 + 0.10, 0.50, 0.12, 0.36]); _stick(ax, p, attr_json)
         vals = {a: np.mean(np.concatenate([np.asarray(rec["scores"]) for v, rec in per[a].items() if Path(rec["json"]).stem.split("-")[0] == p])) for a in DOCTOR5}
-        short = {"trunk_lean": "trunk lean (°)", "head_forward": "head forward (°)", "shoulder_offset": "shoulder offset", "hip_flexion_max": "hip flexion max (°)", "hip_range": "hip range (°)"}
-        lines = [f"{short[a]:20s}{vals[a]:6.2f}   z {(vals[a] - mu[a]) / sd[a]:+.1f}" for a in DOCTOR5]
+        short = {"trunk_lean": "trunk lean (°)", "head_forward": "head forward (°)", "shoulder_offset": "shoulder offset", "hip_flexion_max": "hip flexion max", "hip_range": "hip range (°)"}
+        lines = [f"{short[a]:16s}{vals[a]:6.2f}  z{(vals[a] - mu[a]) / sd[a]:+.1f}" for a in DOCTOR5]
         trust = "measurements" if outl[i] >= thr_i[i] else "video"
         pf = fuse(V[p]["p"][None], G[p]["p"][None], np.array([w_i[i]]))[0, 0]
-        lines += [f"mean |z| = {outl[i]:.2f} {'≥' if outl[i] >= thr_i[i] else '<'} threshold {thr_i[i]:.2f}",
-                  f"→ trust {trust}  (w = {w_i[i]:.2f})",
-                  f"P(ASD)  video {V[p]['p'][0]:.2f}   meas. {G[p]['p'][0]:.2f}   fused {pf:.2f}",
-                  f"truth {'ASD' if y[i] == 0 else 'non-ASD'}   gate {'✓' if ok_f[i] else '✗'}  video {'✓' if ok_v[i] else '✗'}  meas. {'✓' if ok_g[i] else '✗'}"]
-        fig.text(x0, 0.46, "\n".join(lines), fontsize=5.8, va="top", family="monospace", linespacing=1.35)
+        lines += [f"mean|z| {outl[i]:.2f} {'≥' if outl[i] >= thr_i[i] else '<'} thr {thr_i[i]:.2f}",
+                  f"→ trust {trust} (w={w_i[i]:.2f})",
+                  f"P(ASD) video {V[p]['p'][0]:.2f} meas {G[p]['p'][0]:.2f}",
+                  f"       fused {pf:.2f}  truth {'ASD' if y[i] == 0 else 'non-ASD'}",
+                  f"gate {'✓' if ok_f[i] else '✗'}  video {'✓' if ok_v[i] else '✗'}  meas {'✓' if ok_g[i] else '✗'}"]
+        fig.text(x0, 0.47, "\n".join(lines), fontsize=5.0, va="top", family="monospace", linespacing=1.28)
         rows.append({"patient": p, "vals": vals, "outl": float(outl[i]), "thr": float(thr_i[i]), "w": float(w_i[i]),
                      "p_video": float(V[p]["p"][0]), "p_geom": float(G[p]["p"][0]), "p_fused": float(pf), "label_asd": bool(y[i] == 0)})
-    fig.savefig(out_dir / "fig4_explanations.pdf"); fig.savefig(out_dir / "fig4_explanations.png"); plt.close(fig)
+    fig.savefig(out_dir / "fig4_explanations.pdf", bbox_inches="tight", pad_inches=0.02); fig.savefig(out_dir / "fig4_explanations.png", bbox_inches="tight"); plt.close(fig)
     numbers["fig4"] = {"branch": f"{branch[0]} s{branch[1]}", "norm_mean": mu, "norm_std": sd, "examples": rows}
     print("fig4 ok", [r["patient"] for r in rows])
 
@@ -240,8 +243,7 @@ def fig4(out_dir: Path, runs: dict, G: dict, R: dict, pmap: dict, numbers: dict,
 def tables(out_dir: Path, pmap: dict, drop: set, runs: dict, numbers: dict, runs_b5b: dict | None):
     # Table 1 视频 / 骨架行
     tags = [("3D CNN (slow\\_r50, K400)", "B0_3dcnn_e50", "video"), ("TimeSformer-B (K400, 8 frames)", "B5b_timesformer_lr2e5_e50", "video"),
-            ("2D CNN (frame average)", "B1_2dcnn_e50", "video"), ("CNN--LSTM", "B2_cnn_lstm_e50", "video"),
-            ("CLIP alignment (needs annotation at test)", "B4_clip_old_e50", "video+annot."),
+            ("CLIP-style alignment (annotation at test)", "B4_clip_old_e50", "video+annot."),
             ("3D CNN + region grounding (Sec.~3.1)", "M0_concept_learned_e50", "video"),
             ("ST-GCN, 2D skeleton", "B3_pose_e50", "skeleton"), ("ST-GCN, 3D skeleton", "B3_pose_3d_e50", "skeleton"),
             ("CTR-GCN, 2D skeleton", "B6_ctrgcn_e50", "skeleton"), ("CTR-GCN, 3D skeleton", "B6_ctrgcn_3d_e50", "skeleton")]
@@ -310,18 +312,18 @@ def tables(out_dir: Path, pmap: dict, drop: set, runs: dict, numbers: dict, runs
     for (b, s) in runs:
         V = {k: v for k, v in load_video(ROOT / "logs/train", b, s, pmap).items() if k not in drop}
         perm.append(np.mean([macro_np(run_one(V, G, Rr, LAMS, GRID, light=True, perm_seed=ps)["pred"]["step_outl"], runs[(b, s)]["y"]) for ps in range(10)]))
-    gate_rows = [("video branch alone", fus["video"]), ("5 quantities alone", fus["geom"]), ("fixed $w{=}0.5$", fus["fixed0.5"]),
-                 ("nested global $w$", fus["nested_w"]), ("stacking LR", fus["stack"]), ("sigmoid gate (6 features)", fus["gate"]),
+    gate_rows = [("video branch alone", fus["video"]), ("5 quantities alone", fus["geom"]), ("fixed $w{=}0.5$ / nested global $w$ / stacking", (fus["fixed0.5"], fus["nested_w"], fus["stack"])),
+                 ("sigmoid gate (6 features)", fus["gate"]),
                  ("\\textbf{evidence gate}", fus["step_outl"]), ("evidence gate, deviation permuted (10$\\times$)", float(np.mean(perm)))]
     if runs_b5b:
         gate_rows.append(("evidence gate with TimeSformer video branch", np.mean([macro_np(r["pred"]["step_outl"], r["y"]) for r in runs_b5b.values()])))
     lines = ["\\begin{tabular}{lcc}", "\\toprule", "Measurement ablation (10 splits) & Balanced acc. & AUC \\\\", "\\midrule"]
     lines += [f"{n} & {m} & {a} \\\\" for n, (m, a) in abl.items()]
     lines += ["\\midrule", "Fusion (3 video branches $\\times$ 3 seeds) & Balanced acc. & \\\\", "\\midrule"]
-    lines += [f"{n} & {v:.3f} & \\\\" for n, v in gate_rows]
+    lines += [f"{n} & {' / '.join(f'{x:.3f}' for x in v) if isinstance(v, tuple) else f'{v:.3f}'} & \\\\" for n, v in gate_rows]
     lines += ["\\bottomrule", "\\end{tabular}"]
     (out_dir / "table3_ablation.tex").write_text("\n".join(lines) + "\n")
-    numbers["table3"] = {"measurement_ablation": abl, "gate": {n: v for n, v in gate_rows}}
+    numbers["table3"] = {"measurement_ablation": abl, "gate": {n: (list(v) if isinstance(v, tuple) else v) for n, v in gate_rows}}
     print("tables ok")
 
 

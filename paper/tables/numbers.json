@@ -12,16 +12,16 @@
   },
   "hand5_fixed_segment": 0.768,
   "bars": {
-   "5 clinician-defined quantities + LR": "0.717±0.017",
-   "4 quantities at unmarked regions": "0.660±0.037",
-   "L1 over doctor regions (300)": "0.742±0.032",
-   "L1 over all 1,272": "0.730±0.023",
-   "L1 over unmarked regions": "0.710±0.043",
-   "random forest 1,272": "0.732±0.019",
-   "gradient boosting 1,272": "0.738±0.022"
+   "clinician 5 + LR": "0.717$\\pm$0.017",
+   "unmarked 4 + LR": "0.660$\\pm$0.037",
+   "L1, clinician regions": "0.742$\\pm$0.032",
+   "L1, all 1,272": "0.730$\\pm$0.023",
+   "L1, unmarked regions": "0.710$\\pm$0.043",
+   "RF, all 1,272": "0.732$\\pm$0.019",
+   "GB, all 1,272": "0.738$\\pm$0.022"
   },
-  "hand5_auc_10split": "0.787±0.016",
-  "other4_auc_10split": "0.679±0.033"
+  "hand5_auc_10split": "0.787$\\pm$0.016",
+  "other4_auc_10split": "0.679$\\pm$0.033"
  },
  "fig3": {
   "0": {
@@ -119,88 +119,78 @@
  "table1": {
   "3D CNN (slow\\_r50, K400)": [
    "video",
-   "0.644±0.045",
-   "0.670±0.021"
+   "0.644$\\pm$0.045",
+   "0.670$\\pm$0.021"
   ],
   "TimeSformer-B (K400, 8 frames)": [
    "video",
-   "0.637±0.055",
-   "0.716±0.020"
+   "0.637$\\pm$0.055",
+   "0.716$\\pm$0.020"
   ],
-  "2D CNN (frame average)": [
-   "video",
-   "0.572±0.044",
-   "0.591±0.071"
-  ],
-  "CNN--LSTM": [
-   "video",
-   "0.529±0.015",
-   "0.582±0.074"
-  ],
-  "CLIP alignment (needs annotation at test)": [
+  "CLIP-style alignment (annotation at test)": [
    "video+annot.",
-   "0.589±0.030",
-   "0.600±0.027"
+   "0.589$\\pm$0.030",
+   "0.600$\\pm$0.027"
   ],
   "3D CNN + region grounding (Sec.~3.1)": [
    "video",
-   "0.663±0.030",
-   "0.694±0.091"
+   "0.663$\\pm$0.030",
+   "0.694$\\pm$0.091"
   ],
   "ST-GCN, 2D skeleton": [
    "skeleton",
-   "0.513±0.010",
-   "0.563±0.019"
+   "0.513$\\pm$0.010",
+   "0.563$\\pm$0.019"
   ],
   "ST-GCN, 3D skeleton": [
    "skeleton",
-   "0.538±0.026",
-   "0.557±0.038"
+   "0.538$\\pm$0.026",
+   "0.557$\\pm$0.038"
   ],
   "CTR-GCN, 2D skeleton": [
    "skeleton",
-   "0.491±0.029",
-   "0.521±0.066"
+   "0.491$\\pm$0.029",
+   "0.521$\\pm$0.066"
   ],
   "CTR-GCN, 3D skeleton": [
    "skeleton",
-   "0.528±0.065",
-   "0.553±0.078"
+   "0.528$\\pm$0.065",
+   "0.553$\\pm$0.078"
   ],
   "Random forest, 1,272 measurements": [
    "3D meas.",
-   "0.732±0.019",
-   "0.736±0.019"
+   "0.732$\\pm$0.019",
+   "0.736$\\pm$0.019"
   ],
   "Gradient boosting, 1,272 measurements": [
    "3D meas.",
-   "0.738±0.022",
-   "0.770±0.018"
+   "0.738$\\pm$0.022",
+   "0.770$\\pm$0.018"
   ],
   "L1 logistic regression, 1,272 measurements": [
    "3D meas.",
-   "0.730±0.023",
-   "0.760±0.019"
+   "0.730$\\pm$0.023",
+   "0.760$\\pm$0.019"
   ],
   "L1 logistic regression, 300 within clinician regions": [
    "3D meas.",
-   "0.742±0.032",
-   "0.755±0.022"
+   "0.742$\\pm$0.032",
+   "0.755$\\pm$0.022"
   ],
   "4 quantities at unmarked regions + LR": [
    "3D meas.",
-   "0.660±0.037",
-   "0.679±0.033"
+   "0.660$\\pm$0.037",
+   "0.679$\\pm$0.033"
   ],
   "\\textbf{5 clinician-defined quantities + LR}": [
    "3D meas.",
-   "\\textbf{0.717±0.017}",
-   "\\textbf{0.787±0.016}"
+   "\\textbf{0.717$\\pm$0.017}",
+   "\\textbf{0.787$\\pm$0.016}"
   ],
   "same 5 quantities from the 2D skeleton": [
    "2D meas.",
-   "0.739±0.031",
-   "0.785±0.017"
+   "0.739$\\pm$0.031",
+   "0.785$\\pm$0.017"
   ],
   "fusion_9groups": {
    "video": 0.6277892799631931,
@@ -215,59 +205,61 @@
  },
  "table2": {
   "random5": {
-   "all": "0.627±0.076",
-   "clinician": "0.637±0.074",
-   "unmarked": "0.595±0.069"
+   "all": "0.627$\\pm$0.076",
+   "clinician": "0.637$\\pm$0.074",
+   "unmarked": "0.595$\\pm$0.069"
   },
-  "nine": "0.687±0.025",
-  "strict_minus_other": "0.031±0.052",
-  "strict_minus_uniform": "0.012±0.043"
+  "nine": "0.687$\\pm$0.025",
+  "strict_minus_other": "0.031$\\pm$0.052",
+  "strict_minus_uniform": "0.012$\\pm$0.043"
  },
  "table3": {
   "measurement_ablation": {
    "all five": [
-    "0.717±0.017",
-    "0.787±0.016"
+    "0.717$\\pm$0.017",
+    "0.787$\\pm$0.016"
    ],
    "$-$ trunk lean": [
-    "0.682±0.017",
-    "0.767±0.016"
+    "0.682$\\pm$0.017",
+    "0.767$\\pm$0.016"
    ],
    "$-$ shoulder offset": [
-    "0.696±0.023",
-    "0.783±0.014"
+    "0.696$\\pm$0.023",
+    "0.783$\\pm$0.014"
    ],
    "$-$ head forward": [
-    "0.688±0.031",
-    "0.739±0.017"
+    "0.688$\\pm$0.031",
+    "0.739$\\pm$0.017"
    ],
    "$-$ max hip flexion": [
-    "0.723±0.020",
-    "0.790±0.015"
+    "0.723$\\pm$0.020",
+    "0.790$\\pm$0.015"
    ],
    "$-$ hip range": [
-    "0.731±0.010",
-    "0.800±0.010"
+    "0.731$\\pm$0.010",
+    "0.800$\\pm$0.010"
    ],
    "$-$ lumbar--pelvis group (3)": [
-    "0.713±0.019",
-    "0.793±0.012"
+    "0.713$\\pm$0.019",
+    "0.793$\\pm$0.012"
    ],
    "trunk lean alone": [
-    "0.707±0.011",
-    "0.778±0.009"
+    "0.707$\\pm$0.011",
+    "0.778$\\pm$0.009"
    ],
    "head forward alone": [
-    "0.409±0.070",
-    "0.399±0.069"
+    "0.409$\\pm$0.070",
+    "0.399$\\pm$0.069"
    ]
   },
   "gate": {
    "video branch alone": 0.6277892799631931,
    "5 quantities alone": 0.7505175983436853,
-   "fixed $w{=}0.5$": 0.7167011732229125,
-   "nested global $w$": 0.7445939728548425,
-   "stacking LR": 0.7311939268461007,
+   "fixed $w{=}0.5$ / nested global $w$ / stacking": [
+    0.7167011732229125,
+    0.7445939728548425,
+    0.7311939268461007
+   ],
    "sigmoid gate (6 features)": 0.7732344145387623,
    "\\textbf{evidence gate}": 0.7939958592132506,
    "evidence gate, deviation permuted (10$\\times$)": 0.742782378651944,

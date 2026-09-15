@@ -2,23 +2,21 @@
 \toprule
 Measurement ablation (10 splits) & Balanced acc. & AUC \\
 \midrule
-all five & 0.717±0.017 & 0.787±0.016 \\
-$-$ trunk lean & 0.682±0.017 & 0.767±0.016 \\
-$-$ shoulder offset & 0.696±0.023 & 0.783±0.014 \\
-$-$ head forward & 0.688±0.031 & 0.739±0.017 \\
-$-$ max hip flexion & 0.723±0.020 & 0.790±0.015 \\
-$-$ hip range & 0.731±0.010 & 0.800±0.010 \\
-$-$ lumbar--pelvis group (3) & 0.713±0.019 & 0.793±0.012 \\
-trunk lean alone & 0.707±0.011 & 0.778±0.009 \\
-head forward alone & 0.409±0.070 & 0.399±0.069 \\
+all five & 0.717$\pm$0.017 & 0.787$\pm$0.016 \\
+$-$ trunk lean & 0.682$\pm$0.017 & 0.767$\pm$0.016 \\
+$-$ shoulder offset & 0.696$\pm$0.023 & 0.783$\pm$0.014 \\
+$-$ head forward & 0.688$\pm$0.031 & 0.739$\pm$0.017 \\
+$-$ max hip flexion & 0.723$\pm$0.020 & 0.790$\pm$0.015 \\
+$-$ hip range & 0.731$\pm$0.010 & 0.800$\pm$0.010 \\
+$-$ lumbar--pelvis group (3) & 0.713$\pm$0.019 & 0.793$\pm$0.012 \\
+trunk lean alone & 0.707$\pm$0.011 & 0.778$\pm$0.009 \\
+head forward alone & 0.409$\pm$0.070 & 0.399$\pm$0.069 \\
 \midrule
 Fusion (3 video branches $\times$ 3 seeds) & Balanced acc. & \\
 \midrule
 video branch alone & 0.628 & \\
 5 quantities alone & 0.751 & \\
-fixed $w{=}0.5$ & 0.717 & \\
-nested global $w$ & 0.745 & \\
-stacking LR & 0.731 & \\
+fixed $w{=}0.5$ / nested global $w$ / stacking & 0.717 / 0.745 / 0.731 & \\
 sigmoid gate (6 features) & 0.773 & \\
 \textbf{evidence gate} & 0.794 & \\
 evidence gate, deviation permuted (10$\times$) & 0.743 & \\

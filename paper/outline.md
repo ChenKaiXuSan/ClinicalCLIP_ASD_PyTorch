@@ -11,7 +11,7 @@
 
 ---
 
-## Title(候选)
+## Title(已定,2026-09-15:候选 1)
 
 1. **Where Clinicians Look Tells Us What to Measure: Attention-Defined Gait Measurements and Evidence-Gated Fusion for Adult Spinal Deformity**
 2. Clinician Attention as a Measurement Prior, Not a Training Signal: Interpretable Gait Assessment of Adult Spinal Deformity
@@ -127,10 +127,18 @@ VLM 线一句话带过(补充材料)。
 - Fig 4 2–3 名患者的可读解释(5 个数、常模、门控判断、最终结论)。
 - Table 1 主表;Table 2 对照;Table 3 消融;补充:VLM 总表、几何进编码器 255 运行、软先验、79 人版、缺 3D 敏感性。
 
+## 进度(2026-09-15)
+
+- **初稿已成**:`main.tex` 按本骨架重写,正文 8 页 + 参考文献 1 页(`latexmk -pdf main.tex`,TeX Live 在 /work/1/SKIING/chenkaixu/texlive/2026)。
+  图表由 `analysis/paper_figs.py all` 与 `analysis/paper_fig1.py` 生成到 `paper/figs`、`paper/tables`;数字全部来自 `logs/`。
+- **数字审计**:`analysis/paper_audit.py` 通过——已撤回表述 0 处,正文 79 个数字全部溯源到 numbers.json / tables 或白名单(docs)。
+- 参考文献 `refs.bib`:确定条目已写;标 TODO 的(SAM-3D-Body、YOLOv8、SigLIP2、Qwen3-VL、两篇 ASD/DHS 步态临床文献)投稿前核对。
+- 临床合作者确认清单:`paper/clinical_checklist.md`(5 量定义、头部条件性证据解释、门控措辞、Fig 4 病例、数据描述)。
+
 ## 待补
 
-- 出图脚本 `analysis/paper_figs.py`;gate_strata_diag 加 --exclude-missing。
-- 参考文献(`refs.bib` 占位)。
-- 临床合作者确认 5 个量与"头前伸携带证据信号"。
+- 补充材料(VLM 总表、几何进编码器 255 运行、软先验、79 人版、缺 3D 敏感性、逐种子表)——另起 `supplement.tex`。
+- Related Work 需要再补 3–5 篇步态视频 / 骨架临床分类的文献(现在只引方法类)。
+- 提交前:双盲检查、`\todo{ID}`、页数(MICCAI 正文 8 页,参考文献另计)。
 - 主表已统一口径(2026-09-15):视频 / 骨架 50 轮 × 3 种子,测量 10 份划分(含随机森林 / 梯度提升),AUC 同口径。主表数字齐全,可以开始写正文。
 - 写作注意:TimeSformer 用 lr 2e-5(CNN 的 1e-4 下 ViT 不稳定,三种子 0.571,作附注);其余基线超参与 B0 完全相同。
