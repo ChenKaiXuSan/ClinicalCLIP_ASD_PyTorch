@@ -134,3 +134,18 @@ train/val。**val 只用来选 checkpoint,test 只用来报指标。**
   指令必须在视频之前、且患者无关;缓存按 prompt 分目录(`CACHE:<tag>`),训练时不加载 8B 模型。
   矩阵 `qwen` 组;不训练的注意力分析与零样本诊断在 `analysis/eval_qwen_*.py`。
   登录节点每用户内存 16GB,只能跑 2B 冒烟(`tests/smoke_qwen.py`)。
+
+## 多分支区域模型(分支 feat/region-branches)
+
+`model.backbone=region`:按 2D 骨架从 512 原始帧裁身体段小视频,每段一条分支 + 一条全身分支,共享 slow_r50,
+分数层固定权重融合(可选特征层)。医生注意力只决定开哪几段(`model.region_set`),推理不需要标注。
+设计依据、配置项、矩阵 `region` 组(R0–R6)、提交与汇总命令见 `docs/region_branch.md`。
+
+- 数据端 `dataloader/region_crops.py`:框必须等比例(否则改掉躯干前倾角),默认逐帧跟随骨架
+  (`data.region_track=follow`)——源视频的裁剪窗随步态晃动,同一秒内躯干中心极差中位数是画面宽度的 6.2%。
+- 区域裁剪只能用 2D 骨架 pkl(`paths.skeleton_path` 默认值);3D pkl 是相机坐标,会直接报错。
+- 显存约为 B0 的 1.75 倍(全身 224² + 3 段 112²)。
+- 冒烟测试:`tests/smoke_region.py`(CPU;加 `--root-path --sheet` 输出裁剪对照图)。
+- **环境坑**:`clip` 环境靠 `~/.local` 里的 torch 2.7.1,其 CUDA 运行库 2026-09-21 起不全。`pegasus/setup_env.sh`
+  从 `/work/1/SKIING/chenkaixu/pydeps/torch271_cu126` 加载同版本运行库;直接用 env 的 python 跑 torch 会报
+  `libcudart.so.12` 找不到,要先 `source pegasus/setup_env.sh`。
