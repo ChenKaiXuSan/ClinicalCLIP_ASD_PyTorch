@@ -43,6 +43,8 @@ def patient_probs(exp_root: Path, tag: str, pmap: dict[str, str], seed: int = 42
             continue
         best = runs[-1] / "best_preds"
         for pf in sorted(best.glob("*_pred.pt")):
+            if pf.name.endswith("_branch_pred.pt"):  # 区域模型的逐分支概率,不是融合预测
+                continue
             lf = pf.with_name(pf.name.replace("_pred.pt", "_label.pt"))
             nf = pf.with_name(pf.name.replace("_pred.pt", "_video_name.json"))
             prob = torch.load(pf, map_location="cpu", weights_only=False).float().numpy()

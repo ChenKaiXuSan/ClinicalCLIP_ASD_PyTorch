@@ -57,6 +57,8 @@ def load_video(root: Path, tag: str, seed: int, pmap: dict) -> dict:
             raise SystemExit(f"{tag} seed {seed} 缺第 {k} 折")
         best = runs[-1] / "best_preds"
         for pf in sorted(best.glob("*_pred.pt")):
+            if pf.name.endswith("_branch_pred.pt"):  # 区域模型的逐分支概率,不是融合预测
+                continue
             prob = torch.load(pf, map_location="cpu", weights_only=False).float().numpy()
             if not np.allclose(prob.sum(1), 1, atol=1e-3):
                 prob = np.exp(prob - prob.max(1, keepdims=True)); prob /= prob.sum(1, keepdims=True)
