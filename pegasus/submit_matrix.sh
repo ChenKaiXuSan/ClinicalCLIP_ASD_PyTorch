@@ -44,6 +44,12 @@ NUM_WORKERS="${NUM_WORKERS:-12}"
 # 别填成队列上限 24:00:00 —— 维护窗口之前放不下,调度器会把作业压在队列里不发,
 # 哪怕整个集群空着。窗口紧张时按实测值再压:ELAPS=05:00:00 ...
 ELAPS="${ELAPS:-06:00:00}"
+# 记账账户与队列。留空沿用 matrix_job.sh 里写的 SKIING / gpu。
+# SKIING 额度用尽时(qsub 报 Budget exceeded)改记 HP260146:它不能用 gpu 队列,只能走 gen_S,
+# 而 gen_S 默认不给 GPU,必须显式申请 —— 选了 gen_* 队列时这里自动加上。
+#   ACCOUNT=HP260146 QUEUE=gen_S bash pegasus/submit_matrix.sh
+ACCOUNT="${ACCOUNT:-}"
+QUEUE="${QUEUE:-}"
 EXPECT_FOLD="${EXPECT_FOLD:-5}"        # index_mapping 缓存必须是这个折数
 CLASS_NUM="${CLASS_NUM:-2}"            # 划分缓存按类别数分目录存放;任务是 ASD vs non-ASD
 # 追加给每个任务的 Hydra 覆盖,以及加在实验名后的后缀。换任务定义时成对使用 ——
@@ -265,10 +271,17 @@ ENV
     echo "--- 第 ${part} 批: ${n} 个任务 -> ${prefix}.tsv"
     awk -F'\t' '{printf "    [%2d] %s\n", NR-1, $1}' "${prefix}.tsv"
 
+    # 命令行选项优先于 matrix_job.sh 里的 #PBS 指令
+    QSUB_WHERE=()
+    [[ -n "${ACCOUNT}" ]] && QSUB_WHERE+=(-A "${ACCOUNT}")
+    [[ -n "${QUEUE}" ]] && QSUB_WHERE+=(-q "${QUEUE}")
+    [[ "${QUEUE}" == gen_* ]] && QSUB_WHERE+=(-b 1 -l gpunum_job=1)
+
     if [[ "${DRYRUN}" == "1" ]]; then
-        echo "    DRYRUN: qsub -t 0-$((n - 1)) -l elapstim_req=${ELAPS} -v MATRIX_RUN=${prefix} pegasus/matrix_job.sh"
+        echo "    DRYRUN: qsub -t 0-$((n - 1)) ${QSUB_WHERE[*]+${QSUB_WHERE[*]}} -l elapstim_req=${ELAPS} -v MATRIX_RUN=${prefix} pegasus/matrix_job.sh"
     else
         qsub -t "0-$((n - 1))" \
+            ${QSUB_WHERE[@]+"${QSUB_WHERE[@]}"} \
             -l "elapstim_req=${ELAPS}" \
             -N "cclip_mx${part}" \
             -v "MATRIX_RUN=${prefix},CLINICALCLIP_REPO_ROOT=${REPO_ROOT},CLINICALCLIP_DATA_ROOT=${DATA_ROOT}" \
