@@ -144,7 +144,7 @@ train/val。**val 只用来选 checkpoint,test 只用来报指标。**
 - 数据端 `dataloader/region_crops.py`:框必须等比例(否则改掉躯干前倾角),默认逐帧跟随骨架
   (`data.region_track=follow`)——源视频的裁剪窗随步态晃动,同一秒内躯干中心极差中位数是画面宽度的 6.2%。
 - 区域裁剪只能用 2D 骨架 pkl(`paths.skeleton_path` 默认值);3D pkl 是相机坐标,会直接报错。
-- 显存约为 B0 的 1.75 倍(全身 224² + 3 段 112²)。
+- 实测训练显存峰值 20GB(fold0, bf16-mixed, 全身 224² + 3 段 112², 共享骨干),一个 epoch 约 1.5 分钟,50 轮约 1.5 小时。
 - 冒烟测试:`tests/smoke_region.py`(CPU;加 `--root-path --sheet` 输出裁剪对照图)。
 - **环境坑**:`clip` 环境靠 `~/.local` 里的 torch 2.7.1,其 CUDA 运行库 2026-09-21 起不全。`pegasus/setup_env.sh`
   从 `/work/1/SKIING/chenkaixu/pydeps/torch271_cu126` 加载同版本运行库;直接用 env 的 python 跑 torch 会报

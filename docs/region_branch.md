@@ -81,7 +81,7 @@
 ```bash
 REPO=$PWD
 CLINICALCLIP_REPO_ROOT=$REPO CLINICALCLIP_DATA_ROOT=/work/1/SKIING/chenkaixu/data/asd_dataset \
-TAG_SUFFIX=_e50 EPOCHS=50 SEEDS=42,1337,2024 GROUP=region ELAPS=04:00:00 PRECISION=bf16-mixed \
+TAG_SUFFIX=_e50 EPOCHS=50 SEEDS=42,1337,2024 GROUP=region ELAPS=03:00:00 PRECISION=bf16-mixed \
 bash pegasus/submit_matrix.sh
 ```
 
@@ -109,7 +109,13 @@ python analysis/region_branch_summary.py --data-root $DATA --tags R1_region_meas
 
 - `tests/smoke_region.py`(CPU):裁剪几何(等比例、越界补零、follow / fixed、地标组、三级回退、报错)、
   6 种配置的前向 / 反向、真实数据上的形状与一步训练,并输出一张裁剪对照图供肉眼核对。
-- GPU 冒烟:fold 0、1 个 epoch,R1 / R2 / R6(结果见提交记录)。
+- GPU 冒烟(2026-10-06,H100,bf16-mixed,fold 0、1 个 epoch):R1(分数融合)、R2(特征融合)、R6(不共享骨干)
+  三个都端到端跑通,训练 → 验证 → 按最佳 checkpoint 测试 → 预测落盘全部正常。
+  - 落盘:`0_pred.pt (2771, 2)`、`0_label.pt`、`0_video_name.json`、`0_branch_pred.pt (2771, 4, 2)`、`0_branch_names.json`,行数一致;
+    分数融合下"融合概率 = 各分支概率的均值"逐元素成立(最大差 0.0000)。
+  - 训练显存峰值 **20.1GB**(共享骨干)/ 21.4GB(不共享,参数 126.6M,单个 checkpoint 1.5GB);
+    一个训练 epoch 1 分 27 秒(1132 条视频),50 轮估计约 1.5 小时 / 运行。
+  - 1 个 epoch 的准确率没有意义,不作为结果引用。
 
 ## 环境说明
 
