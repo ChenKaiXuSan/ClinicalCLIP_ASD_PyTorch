@@ -29,6 +29,7 @@ import torch
 import torch.nn.functional as F
 
 from .med_attn_map import MedAttnMap
+from .region_crops import build_region_clips
 
 logger = logging.getLogger(__name__)
 
@@ -202,8 +203,18 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         feature_cache_dir: str = "",
         visual_prompt: str = "",
         aux_targets_dir: str = "",
+        region_crops: Optional[list] = None,
+        region_crop_size: int = 112,
+        region_track: str = "follow",
     ) -> None:
         super().__init__()
+
+        # 多分支区域模型(backbone=region):按骨架从**原始分辨率**帧里裁出的身体段名(dataloader/region_crops.py)。
+        # 非空时 sample 多带 region_clips (n_chunks, R, 3, T, S, S) 与 region_boxes (n_chunks, R, T, 3)
+        self._region_names: list = list(region_crops or [])
+        self._region_crop_size = int(region_crop_size)
+        # follow: 裁剪框逐帧跟随地标中心(去掉源视频裁剪窗随步态的晃动);fixed: 段内不动
+        self._region_track = str(region_track)
 
         # 辅助回归目标(角色二:VLM 教师):目录下每个 <attr>.json 是
         # {video_name: {"scores": [逐段]}},由 analysis/eval_qwen_attributes.py 生成。
@@ -309,6 +320,22 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         else:
             video = None
 
+        region_clips = region_boxes = None
+        if self._region_names and frames is not None:
+            if self.attn_map is None:
+                raise RuntimeError("区域裁剪需要骨架(attn_map / skeleton_path)")
+            # 从未缩放的原始帧裁,医生部位保留原始分辨率的细节;骨架与视频共用同一批帧下标
+            region_clips, region_boxes = build_region_clips(
+                frames=frames,
+                pose=self.attn_map.pose_for(video_name, wanted),
+                inverse=inverse,
+                n_chunks=n_chunks,
+                num_samples=self._num_samples,
+                names=self._region_names,
+                size=self._region_crop_size,
+                track=self._region_track,
+            )
+
         sample = {
             "label": file_info_dict["label"],
             "disease": file_info_dict["disease"],
@@ -337,6 +364,10 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
             sample["tokens"] = tokens
             if isinstance(cached, dict) and "pooled" in cached:
                 sample["pooled"] = cached["pooled"]
+
+        if region_clips is not None:
+            sample["region_clips"] = region_clips
+            sample["region_boxes"] = region_boxes
 
         if video is not None:
             sample["video"] = video
@@ -398,11 +429,17 @@ def whole_video_dataset(
     feature_cache_dir: str = "",
     visual_prompt: str = "",
     aux_targets_dir: str = "",
+    region_crops: Optional[list] = None,
+    region_crop_size: int = 112,
+    region_track: str = "follow",
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
         feature_cache_dir=feature_cache_dir,
         visual_prompt=visual_prompt,
         aux_targets_dir=aux_targets_dir,
+        region_crops=region_crops,
+        region_crop_size=region_crop_size,
+        region_track=region_track,
         experiment=experiment,
         labeled_video_paths=dataset_idx,
         img_size=img_size,

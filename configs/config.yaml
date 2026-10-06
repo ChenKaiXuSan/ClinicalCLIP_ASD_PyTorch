@@ -52,6 +52,13 @@ data:
   # 非空时 batch 带 aux (B, A),配合 loss.aux_weight>0 训练辅助回归头
   aux_targets_dir: null
 
+  # 多分支区域模型(model.backbone=region):每段身体小视频的边长。从 512 原始帧裁出后等比例缩放到这个尺寸。
+  # 3 段 × 112² 的像素量是一张 224² 整帧的 0.75 倍,加全身分支后显存约为 B0 的 1.75 倍(最长视频约 55GB)。
+  region_crop_size: 112
+  # 裁剪框中心怎么随时间走。follow(默认):逐帧跟随骨架地标中心 —— 源视频的裁剪窗随步态晃动(同一秒内躯干中心
+  # 的极差中位数是画面宽度的 6.2%),跟随后段内只剩该身体段自己的姿态与运动;fixed:段内取中位数不动(保留晃动,对照)
+  region_track: "follow"
+
 model:
   backbone: "clip"
   model: "resnet" # 仅 3dcnn/2dcnn/cnn_lstm 基线经 make_model 使用
@@ -111,6 +118,20 @@ model:
   pose_arch: stgcn # 骨架基线算子:stgcn(B3) / ctrgcn(B6, Chen et al. ICCV 2021)
   # B5 视频 Transformer 基线(backbone=timesformer)的 HF 权重名;计算节点无外网,先在登录节点下到 HF_HOME
   timesformer_name: facebook/timesformer-base-finetuned-k400
+
+  # ---- 多分支区域模型 (backbone=region),见 models/region_branch.py 与 dataloader/region_crops.py ----
+  # 开哪几段身体:measure(按测量划分的重叠段 head_shoulder/trunk/hip_knee,默认)|
+  # parts(按医生区域字面划分 head/shoulder/lumbar_pelvis)| unmarked(未标的下肢 knee/knee_ankle/foot,对照)|
+  # none(只留全身分支,结构等价于 B0)| 或逗号分隔的段名
+  region_set: "measure"
+  # 是否保留看整帧的全身分支。跨段的关系(例如给定躯干前倾时头的位置)只有它能看到
+  region_use_global: true
+  # score:各分支独立打分,概率按固定权重平均(默认;本项目里只有决策级融合稳定有效)| feature:特征拼接后一个线性头
+  region_fusion: "score"
+  # 各分支是否共享同一个骨干(只是各有一个线性头)。true 时参数量与 B0 相同
+  region_share_backbone: true
+  # 分数层融合的固定权重,顺序 = [global(若有)] + 各身体段;null 为均匀。不可学习
+  region_branch_weights: null
 
   # 特征级融合:把 data.aux_targets_dir 的辅助量(骨架几何属性, z 标准化)拼进分类头输入。
   # 推理时也要有 aux,只能配可直接量出的目标(几何量),不能配 VLM 猜的分数

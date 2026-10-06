@@ -21,6 +21,7 @@ from pytorchvideo.data.labeled_video_dataset import labeled_video_dataset
 
 from .whole_video_dataset import whole_video_dataset
 from .med_attn_map import MedAttnMap
+from .region_crops import resolve_region_set
 from .utils import Div255, UniformTemporalSubsample, ApplyTransformToKey
 
 
@@ -59,6 +60,13 @@ class WalkDataModule(LightningDataModule):
         self._return_pose = opt.model.backbone == "pose"
         self._return_video = opt.model.backbone != "pose"
         self._doctor_source = getattr(opt.model, "doctor_source", "both")
+        # 多分支区域模型:按骨架裁出的身体段(model.region_set),每条分支看一段
+        self._region_names = (
+            resolve_region_set(getattr(opt.model, "region_set", "measure"))
+            if opt.model.backbone == "region" else []
+        )
+        self._region_crop_size = int(getattr(opt.data, "region_crop_size", 112))
+        self._region_track = str(getattr(opt.data, "region_track", "follow"))
 
         self.train_video_transform = Compose(
             [
@@ -120,6 +128,9 @@ class WalkDataModule(LightningDataModule):
                 clip_duration=self._clip_duration,
                 feature_cache_dir=self._feature_cache_dir,
                 aux_targets_dir=self._aux_targets_dir,
+                region_crops=self._region_names,
+                region_crop_size=self._region_crop_size,
+                region_track=self._region_track,
             )
 
             self.train_gait_dataset = whole_video_dataset(
@@ -166,8 +177,13 @@ class WalkDataModule(LightningDataModule):
         batch_tokens = []
         batch_pooled = []
         batch_aux = []
+        batch_region_clips = []
+        batch_region_boxes = []
 
         for i in batch:
+            if "region_clips" in i:
+                batch_region_clips.append(i["region_clips"])
+                batch_region_boxes.append(i["region_boxes"])
             if "tokens" in i:
                 batch_tokens.append(i["tokens"])
             if "pooled" in i:
@@ -215,11 +231,16 @@ class WalkDataModule(LightningDataModule):
                 {
                     k: v
                     for k, v in i.items()
-                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens", "pooled", "aux")
+                    if k not in ("video", "attn_map", "region_map", "region_target", "pose", "tokens", "pooled", "aux",
+                                 "region_clips", "region_boxes")
                 }
                 for i in batch
             ],
         }
+
+        if batch_region_clips:
+            out["region_clips"] = torch.cat(batch_region_clips, dim=0)  # (B, R, 3, T, S, S)
+            out["region_boxes"] = torch.cat(batch_region_boxes, dim=0)  # (B, R, T, 3)
 
         if batch_video:
             out["video"] = torch.cat(batch_video, dim=0)

@@ -142,3 +142,16 @@ geom	G2_concept_nogr_geomaux	model.backbone=concept loss.grounding_weight=0 data
 geom	G3_3dcnn_geomcat	model.backbone=3dcnn data.aux_targets_dir=AUX_GEOM model.aux_concat=true
 geom	G4_concept_geomcat	model.backbone=concept data.aux_targets_dir=AUX_GEOM model.aux_concat=true
 geom	G5_concept_nogr_geomcat	model.backbone=concept loss.grounding_weight=0 data.aux_targets_dir=AUX_GEOM model.aux_concat=true
+
+# ============ 多分支区域模型(backbone=region):医生注意力决定开哪几段身体,每段一条分支 ============
+# 数据端按 2D 骨架从 512 原始帧裁身体段(dataloader/region_crops.py),骨干共享的 slow_r50,默认分数层固定权重融合。
+# 对照都与 B0_3dcnn 同骨干、同超参;R0 只留全身分支,结构等价于 B0,用来确认新链路没有引入回归。
+#   R1 是主配置;R2 换成特征层融合;R3 按医生区域字面划分(跨区域关系被切断);R4 是未标部位(下肢)对照;
+#   R5 去掉全身分支("只输入划分");R6 各分支不共享骨干。
+region	R0_region_global_only	model.backbone=region model.region_set=none
+region	R1_region_measure_score	model.backbone=region model.region_set=measure
+region	R2_region_measure_feat	model.backbone=region model.region_set=measure model.region_fusion=feature
+region	R3_region_parts_score	model.backbone=region model.region_set=parts
+region	R4_region_unmarked_score	model.backbone=region model.region_set=unmarked
+region	R5_region_measure_noglobal	model.backbone=region model.region_set=measure model.region_use_global=false
+region	R6_region_measure_sep	model.backbone=region model.region_set=measure model.region_share_backbone=false

@@ -49,6 +49,20 @@ unset _restore_nounset
 
 hash -r
 
+# torch 2.7.1 装在 ~/.local,依赖同目录下的 nvidia-*-cu12 运行库。2026-09-21 之后那里只剩 cufile 和 nvtx
+# (别的环境装 torch 时被 pip 当作"已有安装"卸掉了),import torch 直接报 libcudart.so.12 找不到。
+# 这里改从一个独立目录加载同版本的运行库:不动 ~/.local、不动任何 conda 环境;目录不存在时什么都不做。
+# 重建: pip install --target <目录> --no-deps nvidia-*-cu12==<torch-2.7.1.dist-info/METADATA 里的版本>
+CLINICALCLIP_CUDA_LIBS="${CLINICALCLIP_CUDA_LIBS:-/work/1/SKIING/chenkaixu/pydeps/torch271_cu126}"
+if [[ -d "${CLINICALCLIP_CUDA_LIBS}/nvidia" ]]; then
+    # cusparselt 的 wheel 装在顶层 cusparselt/ 而不是 nvidia/ 下
+    for _d in "${CLINICALCLIP_CUDA_LIBS}"/nvidia/*/lib "${CLINICALCLIP_CUDA_LIBS}"/cusparselt/lib; do
+        [[ -d "${_d}" ]] && LD_LIBRARY_PATH="${_d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    done
+    export LD_LIBRARY_PATH
+    unset _d
+fi
+
 echo "Python: $(python --version 2>&1) @ $(which python)"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 

@@ -61,6 +61,9 @@ from trainer.train_cnn_lstm import CNNLstmModule
 # 3D CNN model
 from trainer.train_res_3dcnn import SingleModule
 
+# 多分支区域模型:按骨架裁出的身体段各走一条分支,分数层 / 特征层融合
+from trainer.train_region_branch import RegionBranchModule
+
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
     """the train process for the one fold.
@@ -101,6 +104,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * V0:冻结 VLM 特征 + 线性探针。回答"VLM 特征本身够不够、方差是否更小"
     elif hparams.model.backbone == "vlm_probe":
         classification_module = VLMProbeModule(hparams)
+    # * 多分支区域模型:医生注意力决定开哪几段身体,每段一条分支,固定权重的分数层融合
+    elif hparams.model.backbone == "region":
+        classification_module = RegionBranchModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")
