@@ -33,6 +33,7 @@ import numpy as np
 # COCO-17
 NOSE, L_EYE, R_EYE, L_EAR, R_EAR = 0, 1, 2, 3, 4
 L_SH, R_SH, L_HIP, R_HIP = 5, 6, 11, 12
+L_KNEE, R_KNEE, L_ANK, R_ANK = 13, 14, 15, 16
 CONF = 0.3
 MIN_PASS_SEC = 1.5
 GAP_SEC = 0.5
@@ -54,8 +55,21 @@ def frame_quantities(kp: np.ndarray) -> dict | None:
     if ear is not None:
         h = ear - sh
         out["head_dx"], out["head_dy"] = float(h[0]), float(h[1])
+    # 髋屈 / 膝屈(度,与 geom_attributes 同定义:180 - 三点夹角),两腿分开存;膝 / 踝置信度不够则缺
+    for side, (hp, kn, an) in (("l", (L_HIP, L_KNEE, L_ANK)), ("r", (R_HIP, R_KNEE, R_ANK))):
+        if kp[hp, 2] >= CONF and kp[kn, 2] >= CONF:
+            out[f"hip_{side}"] = 180.0 - _angle(sh, kp[hp, :2], kp[kn, :2])
+            if kp[an, 2] >= CONF:
+                out[f"knee_{side}"] = 180.0 - _angle(kp[hp, :2], kp[kn, :2], kp[an, :2])
     out["conf"] = float(np.mean([kp[i, 2] for i in (L_SH, R_SH, L_HIP, R_HIP)]))
     return out
+
+
+def _angle(a, b, c) -> float:
+    """b 点处 a-b-c 的夹角(度)。"""
+    v1, v2 = np.asarray(a, float) - np.asarray(b, float), np.asarray(c, float) - np.asarray(b, float)
+    cos = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9))
+    return math.degrees(math.acos(max(-1.0, min(1.0, cos))))
 
 
 def _sag(dx: float, dy_down: float) -> float:
@@ -125,7 +139,24 @@ def split_passes(rows: list[dict], fps: float, stride: int) -> list[dict]:
         keep &= np.abs(lean) < 60
         if keep.sum() < 5:
             continue
+        # 髋 / 膝:按 1 s 窗口(与短片段的"每秒一段"同口径)算 髋屈最大 = 两腿合并的最大值,髋活动度 = 最大 - 最小,
+        # 经过内各窗口取中位数
+        hip_both = [[r.get("hip_l"), r.get("hip_r")] for r in p]
+        knee_both = [[r.get("knee_l"), r.get("knee_r")] for r in p]
+        win_vals = {"hip_flexion_max": [], "hip_range": [], "knee_flexion_max": []}
+        tk = t[keep]
+        if len(tk):
+            for w0 in np.arange(tk[0], tk[-1], 1.0):
+                sel = [i for i in np.where(keep)[0] if w0 <= t[i] < w0 + 1.0]
+                hv = [x for i in sel for x in hip_both[i] if x is not None]
+                kv = [x for i in sel for x in knee_both[i] if x is not None]
+                if len(hv) >= 4:
+                    win_vals["hip_flexion_max"].append(max(hv)); win_vals["hip_range"].append(max(hv) - min(hv))
+                if len(kv) >= 4:
+                    win_vals["knee_flexion_max"].append(max(kv))
+        hip_stats = {k: (float(np.median(v)) if v else None) for k, v in win_vals.items()}
         out.append({
+            **hip_stats,
             "t_start": p[0]["t"], "t_end": p[-1]["t"], "dur": dur, "n": int(keep.sum()), "n_raw": len(p),
             "fwd": float(np.sign(np.nanmean(fwd[keep]))),
             "trunk_lean": float(np.median(lean[keep])), "trunk_lean_sd": float(np.std(lean[keep])),
@@ -134,7 +165,8 @@ def split_passes(rows: list[dict], fps: float, stride: int) -> list[dict]:
             "conf": float(np.mean([r["conf"] for r, k in zip(p, keep) if k])),
             "box_h": float(np.mean(bh[keep])),
             "n_person_max": int(max(r["n_person"] for r in p)),
-            "frames": [{"t": r["t"], "lean": float(l), "conf": r["conf"]} for r, l, k in zip(p, lean, keep) if k],
+            "frames": [{"t": r["t"], "lean": float(l), "conf": r["conf"], "hip_l": r.get("hip_l"), "hip_r": r.get("hip_r")}
+                       for r, l, k in zip(p, lean, keep) if k],
         })
     return out
 
