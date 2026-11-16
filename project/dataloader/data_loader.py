@@ -53,6 +53,7 @@ class WalkDataModule(LightningDataModule):
         self._region_supervision = opt.model.backbone in ("concept", "vlm_probe")
         # 离线 VLM 特征缓存目录(空则在线编码)。命中时 dataset 不解码视频
         self._feature_cache_dir = str(getattr(opt.data, "feature_cache_dir", "") or "")
+        self._cache_with_video = opt.model.backbone == "video_vlm"
         # 角色二:VLM 属性分数作为视频分支的辅助回归目标(analysis/eval_qwen_attributes.py 的输出目录)
         self._aux_targets_dir = str(getattr(opt.data, "aux_targets_dir", "") or "")
         self._region_map_size = getattr(opt.model, "region_map_size", 28)
@@ -124,9 +125,10 @@ class WalkDataModule(LightningDataModule):
                 region_map_size=self._region_map_size,
                 return_pose=self._return_pose,
                 # 有缓存就不解码像素
-                return_video=self._return_video and not self._feature_cache_dir,
+                return_video=self._return_video and (not self._feature_cache_dir or self._cache_with_video),
                 clip_duration=self._clip_duration,
                 feature_cache_dir=self._feature_cache_dir,
+                cache_with_video=self._cache_with_video,
                 aux_targets_dir=self._aux_targets_dir,
                 region_crops=self._region_names,
                 region_crop_size=self._region_crop_size,

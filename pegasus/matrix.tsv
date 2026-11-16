@@ -155,3 +155,19 @@ region	R3_region_parts_score	model.backbone=region model.region_set=parts
 region	R4_region_unmarked_score	model.backbone=region model.region_set=unmarked
 region	R5_region_measure_noglobal	model.backbone=region model.region_set=measure model.region_use_global=false
 region	R6_region_measure_sep	model.backbone=region model.region_set=measure model.region_share_backbone=false
+
+# ============ VLM 特征 -> 后接分类网络,32B(2026-11-17)============
+# "视频 + 医生知识一起输入 VLM,取特征交给后面的分类网络"在大模型上的版本。9 月 32B 只训过回答位置探针(qwen_scale);
+# 这里补 token 均值探针与概念交叉注意力头,clinical = 指令里带医生关注区域,generic = 不带。8B 的同名配置在 qwen 组。
+qwen_head	Q0m_qwen32b_probe_generic_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_32b_448_generic
+qwen_head	Q0bm_qwen32b_probe_clinical_mean	model.backbone=vlm_probe model.token_backbone=vlm model.vlm_backend=qwen3vl model.probe_pool=mean data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical
+qwen_head	Q1_qwen32b_concept_clinical	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical
+qwen_head	Q1g_qwen32b_concept_generic	model.backbone=concept model.token_backbone=vlm model.vlm_backend=qwen3vl data.feature_cache_dir=CACHE:qwen3vl_32b_448_generic
+
+# ============ 视频 + VLM 双分支,特征融合(backbone=video_vlm,2026-11-17)============
+# 视频走自己的 slow_r50 分支,VLM(视频 + 医生知识指令)的离线特征走另一条分支,最后特征拼接分类。
+# 单分支参照:视频 = B0_3dcnn,VLM = qwen_head 组的均值探针。generic = 指令里不带医生知识;score = 决策级融合的对照。
+vvf	F1_vvf_32b_clinical_feat	model.backbone=video_vlm model.vvf_fusion=feature data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical
+vvf	F2_vvf_32b_generic_feat	model.backbone=video_vlm model.vvf_fusion=feature data.feature_cache_dir=CACHE:qwen3vl_32b_448_generic
+vvf	F3_vvf_32b_clinical_score	model.backbone=video_vlm model.vvf_fusion=score data.feature_cache_dir=CACHE:qwen3vl_32b_448_clinical
+vvf	F4_vvf_8b_clinical_feat	model.backbone=video_vlm model.vvf_fusion=feature data.feature_cache_dir=CACHE:qwen3vl_8b_448_clinical

@@ -201,6 +201,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         return_pose: bool = False,
         return_video: bool = True,
         feature_cache_dir: str = "",
+        cache_with_video: bool = False,
         visual_prompt: str = "",
         aux_targets_dir: str = "",
         region_crops: Optional[list] = None,
@@ -237,6 +238,8 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
         # 命中时不解码像素、不生成 attn_map,只返回 tokens + region 监督;
         # 帧采样计划只依赖总帧数与 fps,与抽特征时完全一致
         self._feature_cache_dir = feature_cache_dir
+        # 视频 + VLM 双分支(backbone=video_vlm):缓存命中时仍然解码像素,两路一起返回
+        self._cache_with_video = bool(cache_with_video)
         # 概念架构走 grounding 监督:按区域拆开的低分辨率图 + 区域软标签
         self._region_supervision = region_supervision
         self._region_map_size = region_map_size
@@ -282,7 +285,7 @@ class LabeledGaitVideoDataset(torch.utils.data.Dataset):
 
         total, fps = _probe(video_path)
         frames = None
-        if cached is not None:
+        if cached is not None and not self._cache_with_video:
             plan = _plan_frame_index(total, max(int(fps), 1), self._num_samples)
             wanted, inverse = torch.unique(plan.flatten(), return_inverse=True)
         elif total <= 0 or fps <= 0:
@@ -427,6 +430,7 @@ def whole_video_dataset(
     return_video: bool = True,
     clip_duration: int = 1,
     feature_cache_dir: str = "",
+    cache_with_video: bool = False,
     visual_prompt: str = "",
     aux_targets_dir: str = "",
     region_crops: Optional[list] = None,
@@ -435,6 +439,7 @@ def whole_video_dataset(
 ) -> LabeledGaitVideoDataset:
     return LabeledGaitVideoDataset(
         feature_cache_dir=feature_cache_dir,
+        cache_with_video=cache_with_video,
         visual_prompt=visual_prompt,
         aux_targets_dir=aux_targets_dir,
         region_crops=region_crops,

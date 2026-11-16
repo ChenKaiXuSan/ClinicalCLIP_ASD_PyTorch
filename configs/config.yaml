@@ -131,6 +131,11 @@ model:
   region_fusion: "score"
   # 各分支是否共享同一个骨干(只是各有一个线性头)。true 时参数量与 B0 相同
   region_share_backbone: true
+  # 视频 + VLM 双分支(backbone=video_vlm,models/video_vlm_fusion.py):视频走 slow_r50,VLM 走离线特征缓存
+  # (data.feature_cache_dir);feature = 两路特征拼接后分类,score = 两路各自分类后概率平均
+  vvf_fusion: "feature"
+  vvf_vlm_dim: 256
+  vvf_branches: "both"   # both | video | vlm(单分支对照)
   # 分数层融合的固定权重,顺序 = [global(若有)] + 各身体段;null 为均匀。不可学习
   region_branch_weights: null
 

@@ -63,6 +63,7 @@ from trainer.train_res_3dcnn import SingleModule
 
 # 多分支区域模型:按骨架裁出的身体段各走一条分支,分数层 / 特征层融合
 from trainer.train_region_branch import RegionBranchModule
+from trainer.train_video_vlm import VideoVLMModule
 
 
 def train(hparams: DictConfig, dataset_idx, fold: int):
@@ -107,6 +108,9 @@ def train(hparams: DictConfig, dataset_idx, fold: int):
     # * 多分支区域模型:医生注意力决定开哪几段身体,每段一条分支,固定权重的分数层融合
     elif hparams.model.backbone == "region":
         classification_module = RegionBranchModule(hparams)
+    # * 视频 + VLM 双分支:视频走 slow_r50,VLM 走离线特征,最后特征融合
+    elif hparams.model.backbone == "video_vlm":
+        classification_module = VideoVLMModule(hparams)
 
     else:
         raise ValueError("the experiment backbone is not supported.")
