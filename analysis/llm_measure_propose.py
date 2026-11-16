@@ -146,6 +146,8 @@ def main() -> None:
     ap.add_argument("--out", default="logs/llm_measure")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--conditions", nargs="*", default=list(CONDITIONS))
+    ap.add_argument("--batch", type=int, default=5, help="每次并行采样的条数")
+    ap.add_argument("--think", action=argparse.BooleanOptionalAction, default=True, help="文本模型是否开启思考模式(模板支持时)")
     ap.add_argument("--print-prompt", action="store_true")
     args = ap.parse_args()
 
@@ -154,29 +156,63 @@ def main() -> None:
         return
 
     import torch
-    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
-    proc = AutoProcessor.from_pretrained(args.model)
-    model = Qwen3VLForConditionalGeneration.from_pretrained(args.model, dtype=torch.bfloat16, low_cpu_mem_usage=True).to(args.device).eval()
-    out_dir = Path(args.out) / args.model.split("/")[-1]
+    system = "You are an expert in clinical gait analysis and musculoskeletal biomechanics."
+    is_vl = "-VL-" in args.model
+    if is_vl:      # Qwen3-VL 系列:纯文本也要走它自己的 processor
+        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        tok = AutoProcessor.from_pretrained(args.model)
+        model = Qwen3VLForConditionalGeneration.from_pretrained(args.model, dtype=torch.bfloat16, low_cpu_mem_usage=True).to(args.device).eval()
+    else:          # 通用开源文本 LLM
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        tok = AutoTokenizer.from_pretrained(args.model)
+        model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.bfloat16, low_cpu_mem_usage=True).to(args.device).eval()
+    name = args.model.split("/")[-1] + ("" if is_vl or args.think else "-nothink")
+    out_dir = Path(args.out) / name
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    def encode(prompt: str):
+        if is_vl:
+            msgs = [{"role": "system", "content": [{"type": "text", "text": system}]}, {"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            return tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to(args.device)
+        msgs = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+        return tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt",
+                                       enable_thinking=args.think).to(args.device)
+
+    def decode(ids, n_in: int) -> list[str]:
+        if is_vl:
+            return tok.batch_decode(ids[:, n_in:], skip_special_tokens=True)
+        return [strip_reasoning(t) for t in tok.batch_decode(ids[:, n_in:], skip_special_tokens=False)]
+
     for cond in args.conditions:
         prompt = build_prompt(*CONDITIONS[cond])
-        msgs = [{"role": "system", "content": [{"type": "text", "text": "You are an expert in clinical gait analysis and musculoskeletal biomechanics."}]},
-                {"role": "user", "content": [{"type": "text", "text": prompt}]}]
-        inputs = proc.apply_chat_template(msgs, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to(args.device)
+        inputs = encode(prompt)
+        n_in = inputs["input_ids"].shape[1]
+        raws: list[str] = []
+        with torch.no_grad():
+            raws += decode(model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False), n_in)
+            done = 0
+            while done < args.n:          # 采样分批,省 KV 缓存
+                b = min(args.batch, args.n - done)
+                torch.manual_seed(1000 + done)
+                raws += decode(model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=True, temperature=args.temperature,
+                                              top_p=0.9, num_return_sequences=b), n_in)
+                done += b
         recs = []
-        for i in range(args.n + 1):
-            torch.manual_seed(1000 + i)
-            kw = {"do_sample": False} if i == 0 else {"do_sample": True, "temperature": args.temperature, "top_p": 0.9}
-            with torch.no_grad():
-                ids = model.generate(**inputs, max_new_tokens=args.max_new_tokens, **kw)
-            raw = proc.batch_decode(ids[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
+        for i, raw in enumerate(raws):
             items, cols, bad = parse(raw)
             recs.append({"sample": i, "greedy": i == 0, "raw": raw, "items": items, "columns": cols, "n_invalid": bad})
             print(f"[{cond} #{i}] 合法 {len(items)} / 非法 {bad} -> {cols}", flush=True)
         json.dump({"model": args.model, "condition": cond, "prompt": prompt, "samples": recs}, open(out_dir / f"{cond}.json", "w"), indent=1)
     print("[done]", out_dir)
+
+
+def strip_reasoning(raw: str) -> str:
+    """去掉思考过程,只留最终回答:Qwen3 的 </think>,gpt-oss 的 final 通道;再去掉特殊符号。"""
+    for mark in ("</think>", "<|channel|>final<|message|>"):
+        if mark in raw:
+            raw = raw.rsplit(mark, 1)[1]
+    return re.sub(r"<\|[^|>]*\|>", "", raw).strip()
 
 
 if __name__ == "__main__":

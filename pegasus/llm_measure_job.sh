@@ -18,6 +18,6 @@ N="${N:-20}"
 echo "节点 $(hostname)  $(date '+%F %T')"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 for M in ${MODELS:-Qwen/Qwen3-VL-8B-Instruct Qwen/Qwen3-VL-4B-Instruct Qwen/Qwen3-VL-2B-Instruct}; do
     echo "== $M  $(date '+%T')"
-    python analysis/llm_measure_propose.py --model "$M" --n "$N" --out "${OUT:-logs/llm_measure}" 2>&1 | grep --line-buffered -vE "Warning|warn"
+    python analysis/llm_measure_propose.py --model "$M" --n "$N" --out "${OUT:-logs/llm_measure}" --max-new-tokens "${MAXTOK:-700}" ${EXTRA:-} 2>&1 | grep --line-buffered -vE "Warning|warn"
 done
 echo "[done] $(date '+%F %T')"
