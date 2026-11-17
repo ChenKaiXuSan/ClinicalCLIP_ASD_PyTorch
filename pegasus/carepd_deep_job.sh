@@ -16,5 +16,5 @@ source pegasus/setup_env.sh
 COHORT="${COHORT:?需要 COHORT}"
 echo "节点 $(hostname)  $(date '+%F %T')"; nvidia-smi --query-gpu=name --format=csv,noheader
 python analysis/carepd/train_deep.py --cohort "$COHORT" --reps "${REPS:-3}" --epochs "${EPOCHS:-60}" \
-    --out "logs/carepd/size_curve_deep_${COHORT}.json" 2>&1 | grep --line-buffered -vE "Warning|warn"
+    --out "${OUTJSON:-logs/carepd/size_curve_deep_${COHORT}.json}" ${KS:+--ks $KS} ${SAVE:+--save-probs $SAVE} 2>&1 | grep --line-buffered -vE "Warning|warn"
 echo "[done] $(date '+%F %T')"

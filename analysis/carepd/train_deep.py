@@ -131,7 +131,7 @@ def run(walks, tr_idx, te_idx, n_class, seed, epochs, device):
             x = walks[i]["x"]
             starts = list(range(0, max(1, len(x) - CLIP + 1), 30))
             p = torch.softmax(model(torch.tensor(np.stack([crop(x, s) for s in starts]), device=device)), -1).mean(0)
-            pred[i] = int(p.argmax())
+            pred[i] = p.float().cpu().numpy()
     return pred
 
 
@@ -143,6 +143,7 @@ def main() -> None:
     ap.add_argument("--ks", default=None, help="逗号分隔,all 表示全部;默认同 size_curve.KS")
     ap.add_argument("--out", required=True)
     ap.add_argument("--cache", default="logs/carepd/joints")
+    ap.add_argument("--save-probs", default=None)
     args = ap.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     walks = load_walks(args.cohort, Path(args.cache))
@@ -152,6 +153,7 @@ def main() -> None:
     ks = KS if args.ks is None else [None if k == "all" else int(k) for k in args.ks.split(",")]
     print(f"{args.cohort}: 行走 {len(walks)}, 受试者 {len(set(sub))}, 类别 {np.bincount(y).tolist()}, 设备 {device}", flush=True)
     out = {}
+    probs = np.full((args.reps, len(y), n_class), np.nan, dtype=np.float32)
     for k in ks:
         vals = []
         for rep in range(args.reps):
@@ -162,12 +164,14 @@ def main() -> None:
                     pred[te] = y[tr][0]
                     continue
                 for i, p in run(walks, tr, te, n_class, 1000 * rep + fi, args.epochs, device).items():
-                    pred[i] = p
+                    pred[i] = int(p.argmax()); probs[rep, i] = p
             ok = pred >= 0
             vals.append(float(f1_score(y[ok], pred[ok], labels=[0, 1, 2], average="macro", zero_division=0)))
         out["all" if k is None else str(k)] = vals
         print(f"k={'全部' if k is None else k}: F1_0-2 {np.mean(vals):.3f} ± {np.std(vals):.3f}  {['%.3f' % v for v in vals]}", flush=True)
         json.dump(out, open(args.out, "w"), indent=1)
+        if k is None and args.save_probs:      # 全量训练时的行走级概率,供与测量分支融合
+            pickle.dump({"probs": probs, "y": y, "subject": sub}, open(args.save_probs, "wb"))
 
 
 if __name__ == "__main__":
