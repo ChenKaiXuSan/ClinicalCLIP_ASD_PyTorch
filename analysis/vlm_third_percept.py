@@ -4,7 +4,8 @@ import json
 import numpy as np
 from pathlib import Path
 from scipy.stats import spearmanr
-V = Path("logs/qwen_attributes/qwen3-vl-8b-instruct_448"); G = Path("logs/geom_attributes_3d")
+import sys
+V = Path(sys.argv[1] if len(sys.argv) > 1 else "logs/qwen_attributes/qwen3-vl-8b-instruct_448"); G = Path("logs/geom_attributes_3d")
 PAIRS = [("trunk_forward_lean", "trunk_lean", +1), ("head_forward", "head_forward", +1), ("knee_flexion_stance", "knee_flexion_max", +1),
          ("short_stride", "step_length", -1), ("slow_walking", "gait_speed", -1), ("reduced_arm_swing", "arm_swing", -1),
          ("hip_extension_loss", "hip_range", -1), ("pelvic_retroversion", "lower_trunk_lean", +1)]

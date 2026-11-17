@@ -157,3 +157,12 @@ ASD 的矢状面代偿是静态的。事件检测本身可靠(13657 周期,事�
 - **环境坑**:`clip` 环境靠 `~/.local` 里的 torch 2.7.1,其 CUDA 运行库 2026-09-21 起不全。`pegasus/setup_env.sh`
   从 `/work/1/SKIING/chenkaixu/pydeps/torch271_cu126` 加载同版本运行库;直接用 env 的 python 跑 torch 会报
   `libcudart.so.12` 找不到,要先 `source pegasus/setup_env.sh`。
+
+## 大 VLM / LLM(2026-11,`docs/llm_measure.md`、`docs/vlm_big.md`)
+
+- `model.backbone=video_vlm`:视频 slow_r50 分支 + VLM 离线特征分支,特征拼接(`models/video_vlm_fusion.py`,矩阵 `vvf` 组);
+  `qwen_head` 组是 32B 特征单独接分类头。dataset 的 `cache_with_video` 让缓存与像素同时返回。
+- 结论:Qwen3-VL-32B 的三种用法(问答、特征接分类头、与视频双分支融合)接证据门控至多 +0.02–0.04,不显著;
+  医生知识写进 VLM 指令无效。LLM(Qwen3-32B / gpt-oss-20b)把医生区域翻译成测量可追平手工 5 量(0.68–0.70)。
+- **端到端模型的种子噪声是 ±0.03–0.05,比较至少用 8 个种子**:3 种子下的 M0 单独 0.663 / 门控 0.819 在 8 种子下是 0.602 / 0.791,不高于 B0(0.634 / 0.798)。
+  论文里这两个数字与 Table 2 的"第 98 百分位"待修正。
