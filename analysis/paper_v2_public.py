@@ -107,8 +107,8 @@ def tables(numbers: dict) -> None:
         if bold:
             cells = [f"\\textbf{{{c}}}" for c in cells]
         return f"{name} & " + " & ".join(cells) + " \\\\"
-    L = ["\\begin{tabular}{@{}lccccc@{}}", "\\toprule", "(a) CARE-PD, macro-F1 & PD-GaM & BMCLab & T-SDU-PD & 3DGait & Mean \\\\", "\\midrule"]
-    for k in ("MixSTE", "MotionBERT", "MotionAGFormer", "MoMask", "PoseFormerV2", "MotionCLIP", "POTR"):
+    L = ["\\begin{tabular}{@{}lccccc@{}}", "\\toprule", "Method & PD-GaM & BMCLab & T-SDU-PD & 3DGait & Mean \\\\", "\\midrule"]
+    for k in ("MixSTE", "MotionBERT", "MotionAGFormer", "MoMask", "PoseFormerV2"):      # 另两个更弱的(POTR, MotionCLIP)在表注里给均值
         L.append(row(f"{k}$^\\dagger$", C["official"][k]))
     L.append(row("Gait features + RF$^\\dagger$", C["official_rf"]))
     L.append("\\midrule")
@@ -191,7 +191,7 @@ def macros(numbers: dict) -> None:
               "asdRandN": str(r["all"]["n"])})
     for k, name in (("l1_uniform", "asdLone"), ("gb", "asdGb"), ("rf", "asdRf"), ("l1_strict_doctor", "asdLoneClin")):
         if k in b:
-            M[name] = f3(b[k]["bacc"]["mean"]); M[name + "Sd"] = f3(b[k]["bacc"]["std"])
+            M[name] = f3(b[k]["bacc"]["mean"]); M[name + "Sd"] = f3(b[k]["bacc"]["std"]); M[name + "Auc"] = f2(b[k]["auc"]["mean"])
     v = fu["video"]
     M.update({"asdFusVideo": f3(v["video"]["mean"]), "asdFusMeas": f3(v["geom"]["mean"]), "asdFixed": f3(v["fixed0.5"]["mean"]), "asdFusMeasTwo": f2(v["geom"]["mean"]), "asdNested": f3(v["nested_w"]["mean"]),
               "asdStack": f3(v["stack"]["mean"]), "asdSigmoid": f3(v["gate"]["mean"]), "asdGate": f3(v["step_outl"]["mean"]), "asdGateSd": f3(v["step_outl"]["std"]),

@@ -105,7 +105,7 @@ combination~\cite{kittler1998combining}, interpretable by design~\cite{rudin2019
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.78\linewidth]{figs/v2_fig1_pipeline.pdf}
+\includegraphics[width=0.8\linewidth]{figs/v2_fig1_pipeline.pdf}
 \caption{A clinical prior is used once, offline, to choose what to measure. At test time a
 subject needs only the video: 3D keypoints give the measurements $\mathbf{m}_i$ and their
 deviation $d_i$ from the population norm; a gate on $d_i$ decides whether the measurement
@@ -233,17 +233,12 @@ inclination, it separates forward-inclined \asd\ from dropped-head non-\asd\ pat
 
 \begin{table}[t]
 \centering
-\caption{Public datasets. (a) CARE-PD, official leave-one-subject-out protocol, macro-F1
-over scores 0--2; $^\dagger$quoted from~\cite{carepd2025}. (b) KOA-PD-NM, three-class
-balanced accuracy, five seeds for networks; $^\ddagger$exploits the recording room and is
-not a gait result.}
+\caption{CARE-PD, official leave-one-subject-out protocol, macro-F1 (scores 0--2).
+$^\dagger$Quoted from~\cite{carepd2025}; POTR (mean $0.41$) and MotionCLIP ($0.45$) omitted.}
 \label{tab:public}
-\begin{minipage}[t]{0.60\linewidth}\vspace{0pt}
-\resizebox{\linewidth}{!}{\input{tables/v2_table2a_carepd.tex}}
-\end{minipage}\hfill
-\begin{minipage}[t]{0.385\linewidth}\vspace{0pt}
-\resizebox{\linewidth}{!}{\input{tables/v2_table2b_koa.tex}}
-\end{minipage}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
+\input{tables/v2_table2a_carepd.tex}
 \end{table}
 
 \begin{figure}[t]
@@ -256,10 +251,9 @@ joints.}
 \end{figure}
 
 Nothing in the pipeline is changed for the public data except the prior. On CARE-PD
-(Table~\ref{tab:public}a) the eight rubric-defined quantities with the same untuned
+(Table~\ref{tab:public}) the eight rubric-defined quantities with the same untuned
 classifier average $\pdMean$, above each of the seven pretrained encoders taken across the
-four cohorts (best: \pdBestEncName, $\pdBestEnc$) and equal to an oracle that picks the best
-encoder per cohort ($\pdOracle$). The picture is uneven: we match the best encoder on
+four cohorts (best: \pdBestEncName, $\pdBestEnc$). The picture is uneven: we match the best encoder on
 PD-GaM, are far ahead on 3DGait, mid-table on BMCLab and below one encoder on T-SDU-PD, and
 subject-bootstrap intervals are wide (PD-GaM \pdGamCi, BMCLab \pdBmcCi), so parity is the
 defensible reading. The benchmark's own hand-crafted baseline averages $\pdRf$. Against an ST-GCN trained on
@@ -270,7 +264,7 @@ $\pdVone$; the item names per-step quantities, which that grammar could not expr
 extended $\mathcal{G}$ and re-derived the set once from the item text before evaluating it
 (both sets: supplement).
 
-On KOA-PD-NM (Table~\ref{tab:public}b) the twelve quantities reach $\koaPrior$. A video
+On KOA-PD-NM the twelve quantities reach $\koaPrior$ (random sets of twelve: $\koaRand$). A video
 network on raw frames scores $\koaRaw$, but $\koaVideo$ once the background is removed and
 $\koaSil$ on silhouettes: most of its margin is the recording room. An ST-GCN on the 3D
 keypoints reaches $\koaSkel$. The three groups differ in age (demographics alone give
@@ -278,20 +272,21 @@ $\koaDemo$), which no method here can remove.
 
 \subsection{Is it the selection, and can it be automated?}
 
-On \asd, five random grammar items average $\asdRandAll$; the prior-defined five lie at the
-$\asdRandAllPct$th percentile of $\asdRandN$ random draws ($\asdRandClinPct$th when drawing
-only within the clinician regions, $\asdRandUnmPct$th within unmarked ones), and data-driven
-selection over all 1,272 candidates does not beat them ($\ell_1$ $\asdLone$, boosting
-$\asdGb$). On CARE-PD the rubric set lies at the $\pdGamPct$th, $\pdBmcPct$th, $\pdTsduPct$th
-and $\pdTdgPct$th percentile of random per-step sets on the four cohorts, and on KOA-PD-NM
-at the $\koaRandPct$th. Selection therefore matters where the disease signal is focal
+On \asd, five random grammar items average $\asdRandAll$; the prior-defined five lie at
+percentile $\asdRandAllPct$ of $\asdRandN$ random draws ($\asdRandClinPct$ when drawing only
+within the clinician regions, $\asdRandUnmPct$ within unmarked ones). Data-driven selection
+over all 1,272 candidates, which does see the labels, gains at most $0.02$ in balanced
+accuracy and loses in AUC ($\ell_1$: $\asdLone$ / $\asdLoneAuc$; boosting: $\asdGb$ /
+$\asdGbAuc$; prior five: $\asdPrior$ / $\asdPriorAuc$). On CARE-PD the rubric set lies at
+percentiles $\pdGamPct$, $\pdBmcPct$, $\pdTsduPct$ and $\pdTdgPct$ of random per-step sets
+on the four cohorts, and on KOA-PD-NM at percentile $\koaRandPct$. Selection therefore matters where the disease signal is focal
 (\asd, 3DGait) and little where impairment is global and most kinematic quantities correlate
 with severity (BMCLab, T-SDU-PD); the prior's value is that it is right without looking at
 labels. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
 each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
 $\pdLlmNoRubric$ when the text is withheld and $\pdRand$ for random sets
-(Table~\ref{tab:public}a); on \asd, sets proposed from the region names match the
-hand-written five and sets proposed for unmarked regions do not (supplement).
+(Table~\ref{tab:public}); on \asd, sets proposed from the region names match the
+hand-written five and those for unmarked regions do not (supplement).
 
 \subsection{When does fusion help? Pixels versus keypoints}
 
@@ -326,7 +321,7 @@ four unmarked-region quantities instead gives $\asdGateUnmDev$.
 
 Replacing the video by a skeleton network removes the gain: with ST-GCN on the 3D joints
 the gate gives $\asdGateSkelThree$ ($\asdGateSkelThreeDelta$ against the measurements). On
-\asd\ this might only mean that the skeleton network is weak; KOA-PD-NM separates the two
+\asd\ this may only reflect a weak skeleton network; KOA-PD-NM separates the two
 explanations. In a secondary, post-hoc analysis in the binary form of the \asd\ task
 (disorder versus healthy), the background-removed video branch scores $\koaVideoBin$,
 the measurements $\koaMeasBin$ and the gate $\koaGateBin$ (permuted: $\koaPermBin$; the true
@@ -348,8 +343,7 @@ A clinical prior is coarse as a label and precise as a pointer: as supervision i
 network where to look, not what the look means; as a specification it turned three short
 statements into five, eight and twelve numbers that a linear model exploits and a reader can
 check. \emph{Limits.} Cohorts have 14--96 subjects and intervals are wide; on the public
-data we claim parity with far simpler models, not a significant gain. CARE-PD encoder
-numbers are quoted, not re-run; the PD set was our second; the KOA-PD-NM binary analysis was
+data we claim parity with far simpler models, not a significant gain. The PD set was our second; the KOA-PD-NM binary analysis was
 post-hoc and its groups differ in age, sex and clothing; gate gains amount to one to five
 subjects and need a second branch with complementary errors; the \asd\ data come from one
 centre. Within these limits the conclusion is consistent across three disorders: clinical
