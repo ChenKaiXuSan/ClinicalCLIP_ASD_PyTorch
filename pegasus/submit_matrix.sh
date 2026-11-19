@@ -28,7 +28,7 @@ CACHE="${CACHE:-${DATA_ROOT}/vlm_cache/${VLM_TAG}}"
 # 角色二(distill 组):VLM 属性分数目录,占位符 AUX
 AUX="${AUX:-${REPO_ROOT}/logs/qwen_attributes/qwen3-vl-8b-instruct_448}"
 AUX_GEOM="${AUX_GEOM:-${REPO_ROOT}/logs/geom_attributes_doctor}"
-SKEL3D="${SKEL3D:-${DATA_ROOT}/clinical_CLIP_dataset/seg_skeleton_pkl_3d}"   # 3D 骨架 pkl 目录(B3_pose_3d)
+SKEL3D="${SKEL3D:-${DATA_ROOT}/clinical_CLIP_dataset/seg_skeleton_pkl_3d_v2}"   # 3D 骨架 pkl 目录(B3_pose_3d)。_v2 = 左右手腕修正后重建;旧的 seg_skeleton_pkl_3d 肘-腕连到对侧,不要再用
 
 GROUP="${GROUP:-all}"        # 逗号分隔,对应 matrix.tsv 第一列;all 表示全部
 # 按实验名精确挑选,逗号分隔。分组是按用途划的,而跨组挑几个配置(比如只给承载论点
