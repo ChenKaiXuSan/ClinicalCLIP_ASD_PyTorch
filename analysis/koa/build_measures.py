@@ -37,8 +37,7 @@ J = {n: i for i, n in enumerate(JOINT_NAMES)}
 FPS = 25.0
 LABEL = {"NM": 0, "KOA": 1, "PD": 2}
 # mhr70 关键点序号;趾根用大脚趾。手腕:41 = right_wrist, 62 = left_wrist(metadata/mhr70.py)。
-# 注意 analysis/measure_bank_3d.py 里这两个写反了(wr_L = 41, wr_R = 62),那边涉及手腕和肘角的量左右是错配的;
-# ASD 的 5 个先验量不涉及手腕,不受影响。这里用正确的对应。
+# analysis/measure_bank_3d.py 与 scripts/build_skeleton3d_pkl.py 在 2026-11-19 之前把这两个写反了,已修正并重建。
 K = {"nose": 0, "ear_L": 3, "ear_R": 4, "sh_L": 5, "sh_R": 6, "el_L": 7, "el_R": 8, "hip_L": 9, "hip_R": 10, "kn_L": 11, "kn_R": 12,
      "ank_L": 13, "ank_R": 14, "foot_L": 15, "foot_R": 18, "wr_L": 62, "wr_R": 41}
 

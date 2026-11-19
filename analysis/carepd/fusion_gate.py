@@ -94,6 +94,7 @@ def main() -> None:
     ap.add_argument("--bank", default="logs/carepd/bank.pkl")
     ap.add_argument("--probs-dir", default="logs/carepd")
     ap.add_argument("--perm", type=int, default=20)
+    ap.add_argument("--out", default=None, help="结果 json")
     ap.add_argument("--gait", default="logs/carepd/gait.pkl")
     ap.add_argument("--set", default="rubric8", choices=["rubric8", "prior12"])
     ap.add_argument("--binary", type=int, default=0, help="T > 0 时把任务改成二分类(评分 < T 对 >= T),检验门控是否依赖任务结构;"
@@ -107,6 +108,7 @@ def main() -> None:
     cols = [col[f] for f in CLASSIC]
     gait = pickle.load(open(args.gait, "rb")); gcols = [gait["features"].index(f) for f in RUBRIC]
     keys = ["deep", "measure", "fixed0.5", "nested_w", "gate"]
+    dump = {}
     print(f"{'队列':10s} " + " ".join(f"{k:>14s}" for k in keys) + f" {'gate_perm':>14s}   门控 - max(单分支)")
     for c, dct in bank["cohorts"].items():
         f = Path(args.probs_dir) / f"deep_probs_{c}.pkl"
@@ -129,7 +131,12 @@ def main() -> None:
         perm = [run(D["probs"][i % len(D["probs"])], Pm, d, y, fold, rng)["gate"] for i in range(args.perm)]
         m = {k: np.array([r[k] for r in res]) for k in keys}
         gain = m["gate"] - np.maximum(m["deep"], m["measure"])
+        dump[c] = {**{k: {"mean": float(m[k].mean()), "std": float(m[k].std())} for k in keys},
+                   "perm": {"mean": float(np.mean(perm)), "std": float(np.std(perm))}, "gain": float(gain.mean()), "gain_pos": int((gain > 0).sum()), "n_rep": int(len(gain))}
         print(f"{c:10s} " + " ".join(f"{m[k].mean():.3f} ± {m[k].std():.3f}" for k in keys) + f" {np.mean(perm):.3f} ± {np.std(perm):.3f}   {gain.mean():+.3f} ({(gain > 0).sum()}/{len(gain)})")
+    if args.out:
+        import json
+        json.dump(dump, open(args.out, "w"), indent=1)
 
 
 if __name__ == "__main__":

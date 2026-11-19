@@ -53,7 +53,7 @@ LANDMARKS = [
     ("spine37", "j", 37),
     ("el_L", "k", 7), ("el_R", "k", 8),
     ("spine35", "j", 35),
-    ("wr_L", "k", 41), ("wr_R", "k", 62),
+    ("wr_L", "k", 62), ("wr_R", "k", 41),      # mhr70: 41 = right_wrist, 62 = left_wrist(2026-11-19 之前这里写反了)
     ("hip_L", "k", 9), ("hip_R", "k", 10), ("hip_mid", "mid", (("k", 9), ("k", 10))),
     ("kn_L", "k", 11), ("kn_R", "k", 12),
     ("ank_L", "k", 13), ("ank_R", "k", 14),

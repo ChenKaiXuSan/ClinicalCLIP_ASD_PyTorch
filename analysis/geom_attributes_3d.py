@@ -46,11 +46,11 @@ sys.path.insert(0, str(ROOT / "project"))
 
 from dataloader.whole_video_dataset import _plan_frame_index, _probe  # noqa: E402
 
-# mhr70 关键点(前 17 个同 COCO 顺序; 41/62 为左右手腕)
+# mhr70 关键点(前 17 个同 COCO 顺序; 手腕 62 = 左, 41 = 右;2026-11-19 之前写反了,arm_swing 取双侧均值所以数值不变)
 NOSE, L_EAR, R_EAR = 0, 3, 4
 L_SH, R_SH, L_EL, R_EL = 5, 6, 7, 8
 L_HIP, R_HIP, L_KNEE, R_KNEE, L_ANK, R_ANK = 9, 10, 11, 12, 13, 14
-L_WR, R_WR = 41, 62
+L_WR, R_WR = 62, 41
 # MHR 127 关节里的脊柱链: 1 骨盆 -> 34 -> 35 -> 36 -> 37 -> 110/112 颈 -> 111/113 头
 SPINE_LOW, SPINE_HIGH = 35, 37
 MAX_GAP = 5

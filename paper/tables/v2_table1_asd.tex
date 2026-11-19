@@ -1,0 +1,21 @@
+\begin{tabular}{@{}llcc@{}}
+\toprule
+Method & Input & Bal.\ acc. & AUC \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{End-to-end (5 folds $\times$ 5 seeds)}} \\
+3D CNN (slow\_r50, K400) & video & 0.636$\pm$0.045 & 0.676$\pm$0.034 \\
+TimeSformer-B (K400)$^{(3)}$ & video & 0.637$\pm$0.055 & 0.716$\pm$0.020 \\
+CLIP-style video--annotation alignment$^{(3)}$ & video+annot. & 0.589$\pm$0.030 & 0.600$\pm$0.027 \\
+3D CNN + region grounding (supervision) & video & 0.602$\pm$0.084 & 0.658$\pm$0.086 \\
+ST-GCN, 2D skeleton$^{(3)}$ & skeleton & 0.513$\pm$0.010 & 0.563$\pm$0.019 \\
+CTR-GCN, 2D skeleton$^{(3)}$ & skeleton & 0.491$\pm$0.029 & 0.521$\pm$0.066 \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Measurements from 3D keypoints (10 random partitions)}} \\
+Gradient boosting, 1,272 candidates & meas. & 0.738$\pm$0.022 & 0.770$\pm$0.018 \\
+$\ell_1$ logistic regression, 1,272 candidates & meas. & 0.730$\pm$0.023 & 0.760$\pm$0.019 \\
+5 random candidates + LR (20 draws) & meas. & 0.604$\pm$0.079 & -- \\
+4 quantities at unmarked regions + LR & meas. & 0.660$\pm$0.037 & 0.679$\pm$0.033 \\
+\textbf{5 prior-defined quantities + LR} & meas. & \textbf{0.717$\pm$0.017} & \textbf{0.787$\pm$0.016} \\
+same 5 quantities from 2D keypoints & meas. & 0.739$\pm$0.031 & 0.785$\pm$0.017 \\
+\bottomrule
+\end{tabular}

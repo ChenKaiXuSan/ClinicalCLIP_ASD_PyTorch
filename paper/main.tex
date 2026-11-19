@@ -1,6 +1,7 @@
 % MICCAI submission — Springer LNCS format. 双盲:提交版匿名,正文 8 页(不含参考文献)。
-% 数字来源:paper/tables/numbers.json(由 analysis/paper_figs.py 生成)与 docs/vlm_backbone.md;
-% 已撤回的表述(AUC 0.85、宽松硬过滤 0.803、随机森林 0.812、"头部区域排序"、"门控与骨架无关")不得出现。
+% 三个数据集的版本(2026-11)。所有数字都是宏,由 analysis/paper_v2.py 生成到 tables/v2_macros.tex;
+% 表格在 tables/v2_table*.tex,数字的来源与逐种子值在 tables/numbers_v2.json。正文里不要手写数字。
+% 不得出现的表述:任何"显著优于深度模型";把 KOA-PD-NM 原图输入的视频成绩当作步态识别;把证据门控写成通用的融合方法。
 \documentclass[runningheads]{llncs}
 
 \usepackage[utf8]{inputenc}
@@ -14,11 +15,12 @@
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 \newcommand{\asd}{ASD}
 \tolerance=1500 \emergencystretch=1.2em
+\input{tables/v2_macros.tex}
 
 \begin{document}
 
 \title{Where Clinicians Look Tells Us What to Measure:\\
-Attention-Defined Gait Measurements and Evidence-Gated Fusion for Adult Spinal Deformity}
+Prior-Defined Gait Measurements across Three Disorders}
 \titlerunning{Where Clinicians Look Tells Us What to Measure}
 
 % ==== 提交时保持匿名 ====
@@ -29,306 +31,330 @@ Attention-Defined Gait Measurements and Evidence-Gated Fusion for Adult Spinal D
 \maketitle
 
 \begin{abstract}
-Clinician region annotations are usually injected into gait models as attention supervision.
-On lateral-view gait videos of adult spinal deformity (\asd) patients we show that this buys
-interpretability but not accuracy: a region-grounded 3D CNN reproduces clinician attention
-four times better than Grad-CAM while patient-level balanced accuracy stays at $0.64$--$0.66$,
-a video transformer does no better, and four skeleton models are at chance. We instead let the
-annotations decide \emph{what to measure}: the regions clinicians mark define five sagittal
-quantities from 3D keypoints, and a logistic regression on these five numbers reaches $0.72$
-(AUC $0.79$; 67 patients, 10 random splits)---above every end-to-end model, above five random
-measurements (98th--100th percentile) and four quantities at unmarked regions ($0.66$), and
-equal to the best data-driven selection over 1,272 candidates. We then fuse the five numbers
-with the video model by an evidence-strength rule---trust the measurements when they deviate
-from the population norm, defer to video otherwise---which raises $0.75$ to $0.79$ ($0.82$
-with the grounded model) where a nested global weight gives $0.75$, and passes permutation,
-region-specificity, backbone and leave-one-out controls. The deviation signal is carried by
-head posture, uninformative alone but decisive given trunk inclination.
-\keywords{Clinical priors \and Gait analysis \and Interpretability \and Adult spinal deformity.}
+Clinical knowledge about gait---which body regions an expert watches, which signs a rating
+scale names---is usually given to video models as supervision. We study the alternative of
+letting that knowledge decide \emph{what to measure}: a prior, stated once and offline, names
+a handful of kinematic quantities, which are computed geometrically from estimated 3D
+keypoints and classified by an untuned logistic regression. On lateral gait videos of adult
+spinal deformity (67 patients, regions marked by two clinicians), five such quantities reach
+$\asdPriorTwo$ balanced accuracy where a Kinetics-pretrained 3D CNN, a video transformer and
+a region-grounded network reach $\asdVidLo$--$\asdVidHi$ and four skeleton networks are at
+chance. The recipe transfers unchanged to two public datasets: eight quantities named by the
+MDS-UPDRS gait item average $\pdMeanTwo$ macro-F1 over the four CARE-PD cohorts under the
+official protocol, against $\pdBestEncTwo$ for the best of seven pretrained motion encoders,
+and twelve quantities reach $\koaPriorTwo$ on KOA-PD-NM against $\koaVideoTwo$ for a video
+network once background shortcuts are removed. A language model given only the prior text
+proposes measurement sets close to the hand-written ones. Finally, fusing the measurements
+with a second branch by an evidence-strength gate helps when that branch reads pixels
+($\asdFusMeasTwo\!\to\!\asdGateTwo$ on \asd) and not when it reads the same keypoints. The
+gains over learned models are modest, and we report the controls that bound them.
+\keywords{Clinical priors \and Gait analysis \and Interpretability \and Small data.}
 \end{abstract}
 
 \section{Introduction}
 
-Adult spinal deformity (\asd) alters walking in ways clinicians recognise at a glance from a
-lateral view: the trunk inclines forward and the pelvis, hips and knees compensate to keep
-the head over the feet~\cite{glassman2005sagittal,schwab2012srs}. Video-based assessment
-needs no markers, and it is natural to ask experts \emph{where they look} and to feed that
-attention into a deep model as a grounding loss on its saliency or as a modality aligned to
-the video~\cite{koh2020cbm,radford2021clip}---treating the annotation as something the
-network should \emph{learn from}.
+A clinician assessing gait does not look everywhere. For adult spinal deformity (\asd) the
+eye goes to the trunk, pelvis and head~\cite{glassman2005sagittal,schwab2012srs}; for
+Parkinson's disease the MDS-UPDRS tells the rater to judge stride amplitude, foot lift, heel
+strike and arm swing~\cite{goetz2008mdsupdrs}. Video-based assessment needs no markers, and
+the usual way to exploit such knowledge is to make a network \emph{learn from} it: a
+grounding loss on its attention, concept supervision, or an auxiliary modality aligned with
+the video~\cite{koh2020cbm,radford2021clip}.
 
-We report a controlled study on 79 patients (1,889 gait videos) annotated by two clinicians
-that reaches a different conclusion about what the annotation is for. (i) Used as
-supervision, it buys a verifiable attention map---our region-grounded 3D CNN aligns with
-clinician attention at $0.53$ against $0.14$ for Grad-CAM---but no accuracy: every
-end-to-end video model, from a Kinetics-pretrained 3D CNN to a video transformer, stays at
-$0.53$--$0.66$ patient-level balanced accuracy, and four skeleton models are at chance.
-(ii) The annotation is a poor training signal: six distinct region combinations, 45.7\%
-inter-clinician agreement. (iii) Yet it is highly informative about \emph{what to measure}:
-five sagittal quantities at the marked regions, from 3D keypoints and a logistic regression,
-reach $0.72$ (AUC $0.79$), and no data-driven selection over 1,272 candidates beats them.
+We argue that this misreads what the knowledge is. ``Watch the trunk and the head'' is not a
+label for a patient; it is a statement about which quantities carry the diagnosis. We
+therefore use a clinical prior for one thing only, offline: to choose a small set of named
+kinematic measurements. The measurements are computed by geometry from estimated 3D
+keypoints, classified by a logistic regression with default regularisation, and the prior
+is never needed at test time (Fig.~\ref{fig:pipeline}).
 
-We therefore recast clinician attention from a training signal into a \emph{measurement
-prior} (Fig.~\ref{fig:pipeline}): the marked regions decide which quantities are measured, a
-readable linear model decides from them, and the annotation is never used at inference. The
-grounded video model and the five numbers err on different patients, and we combine them
-without a post-hoc weight: an \emph{evidence-strength gate} measures how far a patient's
-five quantities deviate from the population norm; unremarkable measurements carry no
-evidence and the video decides, otherwise the measurements decide. Learned inside the
-cross-validation, the rule lifts $0.75$ to $0.79$ ($0.82$ with the grounded model), and its
-signal is carried by head posture relative to the trunk---which is why, we suggest,
-clinicians mark the head.
-
-Our contributions are: (1) a matched comparison of one annotation used as supervision versus
-as a measurement prior, under one protocol; (2) five clinician-defined measurements that
-beat all end-to-end models, with random-measurement, unmarked-region and candidate-bank
-controls showing that the value lies in the selection; (3) an evidence-strength gate
-validated by permutation, region-specificity, backbone and leave-one-out controls; (4) a
-full account of what did not work, in the supplement.
+We test the idea on three datasets under their own protocols. \textbf{(i)} On a private
+\asd\ cohort with region annotations from two clinicians, using the annotation as supervision
+buys a checkable attention map but no accuracy, whereas five quantities defined by the
+marked regions outperform every end-to-end model we trained. \textbf{(ii)} The same pipeline,
+with the prior replaced by a public rating rubric, is on par with or above pretrained motion
+encoders on the four labelled cohorts of CARE-PD~\cite{carepd2025} and above
+shortcut-controlled video and skeleton networks on KOA-PD-NM~\cite{kour2020koapdnm}.
+\textbf{(iii)} The step from prior to measurement set can be delegated to a language model
+that sees only text. \textbf{(iv)} A per-patient \emph{evidence-strength gate} that defers to
+a second branch when the measurements are unremarkable adds accuracy when the second branch
+reads pixels; when it reads the same keypoints it adds nothing, on all three datasets.
+Measurement sets are fixed before outcomes are seen, classifiers are untuned, and we
+report random-set, permutation and shortcut controls. Cohorts are small and most differences
+to learned models lie within bootstrap intervals: we claim parity or better with a handful
+of parameters and a readable decision, not superiority.
 
 \section{Related Work}
 
-Concept bottlenecks~\cite{koh2020cbm} and attention supervision make a network's
-representation match expert concepts or regions; the payoff is a checkable explanation and
-the usual finding, as here, is unchanged accuracy. Post-hoc saliency such as
-Grad-CAM~\cite{selvaraju2017gradcam} is the common alternative; we measure that it does not
-recover clinician attention here. Kinetics-pretrained video
-networks~\cite{kay2017kinetics,feichtenhofer2019slowfast,bertasius2021timesformer} and
-skeleton graph networks~\cite{yan2018stgcn,chen2021ctrgcn} are the standard end-to-end
-choices, whereas clinical gait analysis relies on a few named kinematic quantities.
-Selecting measurements by $\ell_1$ regression~\cite{tibshirani1996lasso,guyon2003feature}
-and combining classifiers at the probability level~\cite{kittler1998combining} are
-classical; we test whether the expert boundary improves selection and gate the fusion by
-evidence strength rather than a learned mixture, in the spirit of interpretable-by-design
-models~\cite{rudin2019stop}.
+Concept bottlenecks~\cite{koh2020cbm} and attention supervision align a network with
+expert concepts or regions, typically buying an explanation at unchanged accuracy; post-hoc
+saliency~\cite{selvaraju2017gradcam} need not recover what experts attend to. The learned
+alternatives are Kinetics-pretrained video
+networks~\cite{feichtenhofer2019slowfast,bertasius2021timesformer}, skeleton graph
+networks~\cite{yan2018stgcn,chen2021ctrgcn}, frozen motion encoders with linear
+probes~\cite{carepd2025}, and pose as a clinically motivated \emph{input} to screening
+networks~\cite{zhou2024gaitpatterns,zhou2025poseprior}. Hand-crafted gait parameters are
+older than all of these; what we add is a test of whether a stated prior, mapped to a few
+measurements \emph{before} seeing data, holds up against such models under matched
+protocols, whether the mapping can be automated, and when the two are complementary. The
+fusion rule is a gated variant of probability-level
+combination~\cite{kittler1998combining}, interpretable by design~\cite{rudin2019stop}.
 
 \section{Method}
 \label{sec:method}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.86\linewidth]{figs/fig1_pipeline.pdf}
-\caption{Two uses of one clinician annotation. (A) As supervision: a region-grounded 3D CNN
-with verifiable attention (Sec.~\ref{sec:sup}). (B) As a measurement prior: the marked
-regions define five sagittal quantities from 3D keypoints, classified by logistic regression
-(Sec.~\ref{sec:prior}). (C) An evidence-strength gate decides per patient whether the
-measurements carry enough evidence to decide (Sec.~\ref{sec:gate}).}
+\includegraphics[width=0.78\linewidth]{figs/v2_fig1_pipeline.pdf}
+\caption{A clinical prior is used once, offline, to choose what to measure. At test time a
+subject needs only the video: 3D keypoints give the measurements $\mathbf{m}_i$ and their
+deviation $d_i$ from the population norm; a gate on $d_i$ decides whether the measurement
+branch or a video network determines the output.}
 \label{fig:pipeline}
 \end{figure}
 
-\paragraph{Data and annotation.} Lateral-view walking videos of 79 patients (54 \asd, 25
-non-\asd; the latter pools dropped-head syndrome and lumbar stenosis / hip osteoarthritis),
-1,889 videos cut into 1-s segments of 8 frames (14,048 segments). Two clinicians marked, per
-patient, the regions they attend to from five candidates; at least one clinician marked
-lumbar--pelvis for 72\% of patients, head for 47\%, shoulder for 23\%, wrist for 3\% and foot
-for 1\%. Only six combinations occur and the clinicians agree on 45.7\% of region decisions.
-2D keypoints come from YOLOv8-pose~\cite{TODO_yolov8pose}; camera-frame 3D keypoints from
-SAM-3D-Body~\cite{TODO_sam3dbody} exist for 67 patients, the primary cohort.
-
-\subsection{Attention as supervision (contrast)}
-\label{sec:sup}
-
-A Kinetics-pretrained slow\_r50 token grid is queried by $R{=}5$ learned concept vectors,
-one per region, by cross-attention; each yields an attention map $A_r$ and a pooled feature.
-A presence head predicts whether region $r$ is marked and the classifier consumes the
-presence-weighted concept features with a global feature. Training minimises
-$\mathcal{L}_{\mathrm{cls}} + \lambda_p\mathcal{L}_{\mathrm{presence}} +
-\lambda_g\mathcal{L}_{\mathrm{ground}}$: a soft cross-entropy against the two-annotator
-targets $\{0,\tfrac12,1\}$ and a KL divergence between $A_r$ and a Gaussian rendering of
-the region on the skeleton, weighted by the soft presence. Inference uses video only.
-Alignment is $\sum_n A(n)\hat M(n)$, $\hat M=M/\max M$; a uniform map scores $0.068$.
-
-\subsection{Attention as a measurement prior}
+\subsection{From a clinical prior to a measurement set}
 \label{sec:prior}
 
-The annotation statistics single out three regions, for which we take the textbook sagittal
-readings, computed per segment from its 8 frames: \emph{trunk lean}, the angle of the
-shoulder-midpoint--hip-midpoint line to the vertical (forward positive); \emph{shoulder
-offset}, the anterior offset of the shoulder midpoint from the hip midpoint over trunk
-length; \emph{head forward}, the angle of the ear-midpoint--shoulder-midpoint line to the
-vertical; \emph{maximum hip flexion}, $180^\circ$ minus the smallest shoulder--hip--knee
-angle; and \emph{hip range}, the within-segment range of that angle. A patient is the mean
-of each quantity over segments; the five values are standardised and classified by a
-class-balanced logistic regression ($C{=}1$). Nothing is tuned on the outcome. To test
-whether the selection matters we also build a \emph{bank} of 1,272 candidates (pairwise
-landmark inclinations, offsets and distances, and chain angles, as segment means, extremes
-and ranges), each labelled by the regions it touches, and classify it by segment-level
-$\ell_1$ logistic regression ($C$ by an inner split) with the candidates restricted to the
-clinician regions, to their complement, or unrestricted, and by random forests and gradient
-boosting on all candidates.
+A \emph{prior} $\Pi$ is whatever clinicians have already written down about a disorder's
+gait. We use three kinds. For \asd, two spine surgeons marked per patient the regions they
+attend to among five; at least one marked lumbar--pelvis for 72\% of patients, head for 47\%
+and shoulder for 23\% (wrist 3\%, foot 1\%), the two agree on only 45.7\% of region
+decisions and six combinations occur, so we read the annotation as a group-level prior
+$\Pi_{\mathrm{ASD}}{=}\{$lumbar--pelvis, head, shoulder$\}$. For Parkinson's disease
+$\Pi_{\mathrm{PD}}$ is the text of MDS-UPDRS item 3.10~\cite{goetz2008mdsupdrs} (``stride
+amplitude, stride speed, height of foot lift, heel strike during walking, turning, and arm
+swing''). For knee osteoarthritis $\Pi_{\mathrm{KOA}}$ is the textbook description: reduced
+knee excursion, side-to-side asymmetry, prolonged double support.
+
+Measurements are expressed in a fixed grammar $\mathcal{G}$ over body landmarks in a
+walking-aligned frame: \emph{posture} quantities (sagittal inclination, offset or distance
+of a landmark pair, or a joint angle, summarised over 1-s segments by mean, extreme or
+range) and \emph{per-step} quantities computed from foot contacts, detected as extrema of
+the fore--aft inter-ankle distance~\cite{zeni2008gait} (step length, cadence, speed, joint
+ranges, foot lift, foot pitch at contact, arm-swing excursion, asymmetries, double support).
+A measurement set is a subset $S(\Pi)\subset\mathcal{G}$ fixed before any outcome is seen.
+$S(\Pi_{\mathrm{ASD}})$ has five posture quantities at the three regions: trunk lean,
+shoulder offset, head-forward angle, maximum hip flexion and hip range.
+$S(\Pi_{\mathrm{PD}})$ has the eight per-step quantities the item names: step length,
+speed, cadence, ankle and toe lift, foot pitch at contact, and arm-swing excursion (mean of
+the two sides and the smaller side). $S(\Pi_{\mathrm{KOA}})$ adds four: knee range and its
+asymmetry, step-length asymmetry and double-support fraction. The mapping $\Pi\mapsto S$ is made either by us or by a language model that receives the
+prior text, the landmark list and $\mathcal{G}$ and returns $K$ grammar items; it sees no
+video, keypoint or label. As controls we draw random sets of the same size from
+$\mathcal{G}$, withhold the prior from the language model, and let data-driven selectors
+($\ell_1$ regression, boosting) choose from the whole grammar.
+
+\subsection{Measurement branch}
+
+A subject is the mean of each quantity over their segments or walks,
+$\mathbf{m}_i\in\mathbb{R}^{|S|}$. With $\boldsymbol\mu,\boldsymbol\sigma$ from the training
+subjects, $\mathbf{z}_i=(\mathbf{m}_i-\boldsymbol\mu)/\boldsymbol\sigma$ is classified by a
+class-balanced (multinomial) logistic regression with default regularisation ($C{=}1$),
+giving $P^{m}_i$. Nothing is tuned on the outcome; the model has $|S|{+}1$ parameters per
+class.
 
 \subsection{Evidence-strength gating}
 \label{sec:gate}
 
-Let $P_v$ and $P_m$ be the patient-level \asd\ probabilities of the video and five-number
-models, and $d$ the patient's mean absolute $z$-score of the five quantities with respect to
-the training patients. The fused probability is $P=(1-w)P_v+wP_m$ with
-$w=w_{\mathrm{lo}}$ if $d<\tau$ and $w=w_{\mathrm{hi}}$ otherwise, $\tau=Q_q(d_{\mathrm{train}})$,
-where $(q,w_{\mathrm{lo}},w_{\mathrm{hi}})$ are chosen on the training patients of each outer
-fold from a small grid ($q\in\{0.2,\ldots,0.5\}$, $w_{\mathrm{lo}}\in\{0,0.25,0.5\}$,
-$w_{\mathrm{hi}}\in\{0.75,1\}$) by balanced accuracy; the test fold only applies the rule:
-unremarkable measurements carry no evidence, so the video decides. Under the same nested
-protocol we compare a fixed $w{=}0.5$, a nested global $w$, stacking (logistic regression on
-the two logits) and a sigmoid gate $w=\sigma(\theta^\top u)$ on six reliability features
-(video confidence and segment disagreement, number of segments, measurement confidence,
-fraction of segments without 3D, and $d$), fitted by class-balanced likelihood with an
-inner-selected $\ell_2$ penalty.
+A measurement vector near the population norm says little; a strongly deviating one is
+decisive. We quantify this by the \emph{deviation}
+$d_i=\frac{1}{|S|}\sum_{j}|z_{ij}|$, the subject's mean absolute $z$-score under
+training-fold statistics, and fuse $P^{m}_i$ with the output $P^{v}_i$ of a second branch as
+\begin{equation}
+P_i=w_i\,P^{m}_i+(1-w_i)\,P^{v}_i,\qquad
+w_i=\begin{cases} w_{\mathrm{lo}} & d_i<\tau\\ w_{\mathrm{hi}} & d_i\ge\tau\end{cases},
+\label{eq:gate}
+\end{equation}
+with $\tau$ the $q$-quantile of the training deviations. The triple
+$(q,w_{\mathrm{lo}},w_{\mathrm{hi}})$ is chosen from a small grid
+($q\in\{0.2,\ldots,0.5\}$, $w_{\mathrm{lo}}\in\{0,0.25,0.5\}$, $w_{\mathrm{hi}}\in\{0.75,1\}$)
+on the out-of-fold predictions of the other folds by balanced accuracy; the test fold only
+applies the rule. Under the same nesting we compare a fixed $w{=}0.5$, a nested global $w$,
+and the gate with $d$ permuted across subjects, which keeps the rule's flexibility but
+removes its information.
+
+\paragraph{Second branch and contrast models.} The second branch is a Kinetics-pretrained
+slow\_r50~\cite{feichtenhofer2019slowfast} fine-tuned on 1-s segments of 8 frames; to test
+what the gate needs we replace it by ST-GCN~\cite{yan2018stgcn} on the same keypoints the
+measurements use. As the conventional use of the \asd\ prior we train a region-grounded
+variant: concept queries per region over the slow\_r50 token grid, a presence head, and a
+KL loss tying each attention map to the region rendered on the skeleton.
 
 \section{Experiments}
 
-\paragraph{Protocol.}
+\subsection{Datasets and protocol}
 \label{sec:protocol}
-All splits are patient-disjoint. Video and skeleton models use one nested five-fold split
-(train/validation/test $\approx$ 60/20/20; validation selects the checkpoint), 50 epochs,
-three seeds and identical optimisation (Adam, $10^{-4}$, weight decay $10^{-3}$, bf16); only
-the video transformer, unstable at that rate ($0.571$), is reported at $2\times10^{-5}$.
-Measurement models have no training randomness, so we re-draw the five-fold partition ten
-times and report mean $\pm$ s.d.\ (the fixed split is $0.03$--$0.05$ optimistic for some
-variants). Fusion is bound to the fixed split and reported over three video branches (3D
-CNN, grounded, grounded without the grounding loss) $\times$ three seeds $=$ nine groups.
-Twelve patients have no 3D keypoints and would be median-filled, so primary numbers use the
-67 complete patients (46 \asd\ / 21 non-\asd); the 79-patient version is in the supplement.
-The metric is patient-level balanced accuracy (segment probabilities averaged per patient;
-chance $0.5$) with AUC, bootstrap intervals and exact McNemar tests~\cite{mcnemar1947note}.
 
-\subsection{Main result}
+\textbf{\asd} (private). Lateral walking videos of 79 patients; 3D keypoints from
+SAM-3D-Body~\cite{TODO_sam3dbody} exist for 67 (46 \asd, 21 non-\asd: dropped-head syndrome,
+lumbar stenosis, hip osteoarthritis), the cohort used throughout. End-to-end models share
+one nested five-fold patient split (validation selects the checkpoint), 50 epochs and five
+seeds; measurement models have no training randomness, so their five-fold partition is
+redrawn ten times. We report patient-level balanced accuracy (chance $0.5$) and AUC.
+\textbf{CARE-PD}~\cite{carepd2025} (public). SMPL gait sequences with clinician-rated
+UPDRS-gait scores per walk for four cohorts: PD-GaM (30 subjects, 1,700 walks), BMCLab (23,
+781), T-SDU-PD (14, 381), 3DGait (43, 90). We follow the official protocol: within-cohort
+leave-one-subject-out, walk-level predictions pooled over folds, macro-F1 over scores 0--2.
+Encoder results are quoted from the benchmark paper (frozen encoder, linear probe, one run),
+not re-run. \textbf{KOA-PD-NM}~\cite{kour2020koapdnm} (public). Sagittal RGB videos of 50
+knee-osteoarthritis, 16 Parkinson's and 30 healthy subjects, two walks each (190 usable
+videos). Keypoints, split design and video model are as for \asd; the metric is three-class
+balanced accuracy. Acquisition differs with the label here---frame rate (98\% of KOA clips
+at 50\,fps, 86\% of healthy clips at 30), room, clothing---so all videos are resampled by
+time to 25\,fps and the video branch sees person-centred crops with the background removed
+by instance segmentation; raw-frame and silhouette-only variants serve as checks.
+
+\subsection{Adult spinal deformity: supervision versus measurement}
 
 \begin{table}[t]
 \centering
-\caption{Patient-level balanced accuracy and AUC, 67 patients. Video/skeleton rows: fixed
-split, 50 epochs $\times$ 3 seeds. Measurement rows: 10 random partitions. Fusion: fixed
-split $\times$ 3 seeds $\times$ 3 video branches.}
-\label{tab:main}
-\setlength{\tabcolsep}{4pt}
-\resizebox{\linewidth}{!}{\input{tables/table1_main.tex}}
+\caption{\asd, 67 patients, patient-level. End-to-end rows: fixed split, 50 epochs, mean
+$\pm$ s.d.\ over five seeds. Measurement rows: ten random five-fold partitions.}
+\label{tab:asd}
+\resizebox{\linewidth}{!}{\input{tables/v2_table1_asd.tex}}
 \end{table}
 
-Every end-to-end model that consumes the video lands between $0.53$ and $0.66$
-(Table~\ref{tab:main}): the 3D CNN at $0.644$, the TimeSformer at $0.637$ (best video AUC,
-$0.72$), the grounded model at $0.663$; a 2D CNN and a CNN--LSTM are lower ($0.57$, $0.53$;
-supplement). The four skeleton models, two architectures $\times$ two skeleton sources, are
-at chance ($0.49$--$0.54$). The five clinician-defined quantities
-reach $0.717\pm0.017$ with AUC $0.787\pm0.016$, the highest AUC in the table; from the 2D
-skeleton the same five give $0.739\pm0.031$, so the result does not hinge on the 3D
-estimator. Four plausible quantities at the unmarked regions (knee flexion, step length,
-gait speed, arm swing) give $0.660$, and adding them to the five \emph{lowers} accuracy to
-$0.687$. The same 3D joints that are at chance through a graph network are at $0.72$ as five
-numbers: the signal is in what is measured, not in representation learning.
+Table~\ref{tab:asd} gives the comparison. The video models reach $\asdVidLo$--$\asdVidHi$;
+grounding the 3D CNN to the clinician regions yields attention that matches the annotation
+($0.53$ alignment against $0.14$ for Grad-CAM on the plain network) but $\asdGrounded$
+accuracy, no better than the ungrounded $\asdVideo$. The four skeleton networks are at
+chance ($\asdSkelLo$--$\asdSkelHi$). The five prior-defined quantities reach
+$\asdPrior\pm\asdPriorSd$ (AUC $\asdPriorAuc$), and $\asdPriorTwoD$ from 2D keypoints, so the
+result does not hinge on the 3D estimator. The same 3D joints that are uninformative through
+a graph network are informative as five numbers: with 67 patients the bottleneck is knowing
+what to compute, not capacity. Four plausible quantities at unmarked regions (knee flexion,
+step length, speed, arm swing) give $\asdUnmarked$, and adding them to the five lowers
+accuracy to $\asdNine$. Trunk lean alone gives $\asdTrunk$; the head-forward angle alone is uninformative
+($\asdHeadAlone$) yet removing it costs the most ($\asdMinusHead$): given the trunk
+inclination, it separates forward-inclined \asd\ from dropped-head non-\asd\ patients.
 
-\subsection{Is it the selection?}
+\subsection{Transfer to public datasets}
+
+\begin{table}[t]
+\centering
+\caption{Public datasets. (a) CARE-PD, official leave-one-subject-out protocol, macro-F1
+over scores 0--2; $^\dagger$quoted from~\cite{carepd2025}. (b) KOA-PD-NM, three-class
+balanced accuracy, five seeds for networks; $^\ddagger$exploits the recording room and is
+not a gait result.}
+\label{tab:public}
+\begin{minipage}[t]{0.60\linewidth}\vspace{0pt}
+\resizebox{\linewidth}{!}{\input{tables/v2_table2a_carepd.tex}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.385\linewidth}\vspace{0pt}
+\resizebox{\linewidth}{!}{\input{tables/v2_table2b_koa.tex}}
+\end{minipage}
+\end{table}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.95\linewidth]{figs/fig2_selection.pdf}
-\caption{(a) Five measurements drawn at random from the bank (100 draws per pool; fixed
-split) against the clinician-defined five. (b) Ten-partition mean $\pm$ s.d.\ of the five
-against data-driven selection over the 1,272 candidates.}
-\label{fig:selection}
+\includegraphics[width=\linewidth]{figs/v2_fig2_size.pdf}
+\caption{CARE-PD, training-set size. The dataset's six-fold subject splits with the training
+subjects subsampled; mean $\pm$ s.d.\ over resamplings. ST-GCN is trained by us on the same
+joints.}
+\label{fig:size}
 \end{figure}
 
-Fig.~\ref{fig:selection} asks whether \emph{any} five measurements would do. Five drawn at
-random average $0.63$ (all regions), $0.64$ (clinician regions) and $0.60$ (unmarked
-regions); the clinician-defined five sit at the 98th, 99th and 100th percentile of the 100
-draws. Data-driven selection over all 1,272 candidates reaches $0.730\pm0.023$ ($\ell_1$),
-$0.732\pm0.019$ (random forest) and $0.738\pm0.022$ (gradient boosting); restricting the
-candidates to the clinician regions gives $0.742\pm0.032$ and to their complement
-$0.710\pm0.043$ ($+0.03\pm0.05$, positive in 7/10 partitions): at the bank level the expert
-boundary does not improve selection beyond noise. The honest reading is parsimony---five
-named numbers equal the best of 1,272---and the annotation's value is in naming them.
+Nothing in the pipeline is changed for the public data except the prior. On CARE-PD
+(Table~\ref{tab:public}a) the eight rubric-defined quantities with the same untuned
+classifier average $\pdMean$, above each of the seven pretrained encoders taken across the
+four cohorts (best: \pdBestEncName, $\pdBestEnc$) and equal to an oracle that picks the best
+encoder per cohort ($\pdOracle$). The picture is uneven: we match the best encoder on
+PD-GaM, are far ahead on 3DGait, mid-table on BMCLab and below one encoder on T-SDU-PD, and
+subject-bootstrap intervals are wide (PD-GaM \pdGamCi, BMCLab \pdBmcCi), so parity is the
+defensible reading. The benchmark's own hand-crafted baseline averages $\pdRf$. Against an ST-GCN trained on
+the same joints and splits (Fig.~\ref{fig:size}) the measurements are ahead on PD-GaM at
+every training size, by $\pdSizeGapTwo$ and $\pdSizeGapFour$ with two and four subjects, and
+level or ahead elsewhere. Our first set for this dataset, twelve posture quantities in the \asd\ grammar, averaged
+$\pdVone$; the item names per-step quantities, which that grammar could not express, so we
+extended $\mathcal{G}$ and re-derived the set once from the item text before evaluating it
+(both sets: supplement).
 
-\subsection{Evidence-gated fusion and ablations}
+On KOA-PD-NM (Table~\ref{tab:public}b) the twelve quantities reach $\koaPrior$. A video
+network on raw frames scores $\koaRaw$, but $\koaVideo$ once the background is removed and
+$\koaSil$ on silhouettes: most of its margin is the recording room. An ST-GCN on the 3D
+keypoints reaches $\koaSkel$. The three groups differ in age (demographics alone give
+$\koaDemo$), which no method here can remove.
+
+\subsection{Is it the selection, and can it be automated?}
+
+On \asd, five random grammar items average $\asdRandAll$; the prior-defined five lie at the
+$\asdRandAllPct$th percentile of $\asdRandN$ random draws ($\asdRandClinPct$th when drawing
+only within the clinician regions, $\asdRandUnmPct$th within unmarked ones), and data-driven
+selection over all 1,272 candidates does not beat them ($\ell_1$ $\asdLone$, boosting
+$\asdGb$). On CARE-PD the rubric set lies at the $\pdGamPct$th, $\pdBmcPct$th, $\pdTsduPct$th
+and $\pdTdgPct$th percentile of random per-step sets on the four cohorts, and on KOA-PD-NM
+at the $\koaRandPct$th. Selection therefore matters where the disease signal is focal
+(\asd, 3DGait) and little where impairment is global and most kinematic quantities correlate
+with severity (BMCLab, T-SDU-PD); the prior's value is that it is right without looking at
+labels. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
+each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
+$\pdLlmNoRubric$ when the text is withheld and $\pdRand$ for random sets
+(Table~\ref{tab:public}a); on \asd, sets proposed from the region names match the
+hand-written five and sets proposed for unmarked regions do not (supplement).
+
+\subsection{When does fusion help? Pixels versus keypoints}
 
 \begin{table}[t]
 \centering
-\caption{Ablations. Top: leave-one-out, region-group and single-quantity models (10
-partitions). Bottom: fusion with the video branch under the same nested protocol, 9 groups.}
-\label{tab:ablation}
+\caption{Fusion with a second branch (nested selection, mean over five seeds). \emph{Either}:
+either branch correct. CARE-PD: mean of four cohorts, macro-F1.}
+\label{tab:fusion}
 \footnotesize
-\setlength{\tabcolsep}{4pt}
-\input{tables/table3_ablation.tex}
+\setlength{\tabcolsep}{3.5pt}
+\resizebox{\linewidth}{!}{\input{tables/v2_table3_fusion.tex}}
 \end{table}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.46\linewidth]{figs/fig3_gate_strata.pdf}
-\caption{Why the gate works: accuracy by tercile of $d$, pooled over the 9 fusion groups.
-Where measurements are unremarkable (left; 86\% \asd) the five-number model is at chance
-and the video model is not; where they deviate the five numbers are almost always right.}
+\includegraphics[width=0.8\linewidth]{figs/v2_fig3_strata.pdf}
+\caption{Accuracy by tercile of the deviation $d$: the video branch is better where the
+measurements are unremarkable, the measurements where they deviate.}
 \label{fig:strata}
 \end{figure}
 
-The video branch and the five numbers err on different patients: either being right would
-give $0.90$. Table~\ref{tab:ablation} (bottom) shows what is recoverable honestly. A fixed
-$w{=}0.5$ ($0.717$) and a nested global weight ($0.745$) do not beat the five numbers alone
-($0.751$); stacking ($0.731$) and the sigmoid gate ($0.773$), whose coefficients collapse to
-a near-constant weight, do little better. The evidence-strength gate reaches $0.794$
-(grounded branch: $0.819$), non-negative against the five numbers in all nine groups and
-against the nested weight in eight, and significant against the video branch in seven
-(McNemar $p\le0.05$). The rule is stable: $\tau$ at the 30--40th percentile of $d$,
-$w_{\mathrm{lo}}\in\{0,0.5\}$, $w_{\mathrm{hi}}=1$; any fixed $q\in[0.1,0.4]$ gives
-$0.795$--$0.809$.
+On \asd\ (Table~\ref{tab:fusion}) the measurement branch scores $\asdFusMeas$ on the fixed
+split and the 3D CNN $\asdFusVideo$; a fixed $w{=}0.5$ ($\asdFixed$) and a nested global
+weight ($\asdNested$) do not improve on the measurements, while the evidence gate reaches
+$\asdGate\pm\asdGateSd$, above both branches in $\asdGateGainPos$ of $\asdNseed$ seeds and
+above the permuted-deviation gate ($\asdPerm$) in $\asdGateGtPerm$\% of permutations.
+Fig.~\ref{fig:strata} shows why: in the tercile of least deviation, $\asdStrLowAsd$\% of
+patients are \asd---patients without visible sagittal compensation---and the measurement
+branch is right $\asdStrLowMeas$ of the time against $\asdStrLowVideo$ for the video; in the
+top tercile the measurements are right $\asdStrHighMeas$ of the time. Computing $d$ from the
+four unmarked-region quantities instead gives $\asdGateUnmDev$.
 
-Fig.~\ref{fig:strata} shows the mechanism. In the tercile of least deviation 86\% of the
-patients are \asd\ but the five-number model scores $0.50$: with normal-looking measurements
-it defaults to non-\asd, and these are \asd\ patients without visible sagittal compensation,
-whom the video model recognises at $0.69$; in the other terciles the five numbers are right
-$0.77$ and $0.96$ of the time. Four controls close the argument: permuting $d$ across
-patients drops the gate to $0.743$ (10 permutations per group; the true value exceeds all 30
-permutations in a 79-patient run); computing $d$ from the four unmarked-region quantities
-gives $0.733$, the permutation level; replacing the video branch by the TimeSformer gives
-$0.785$; and leaving out head forward removes the gain entirely ($0.794\to0.729$, five-number
-model at $0.740$), whereas leaving out any other quantity changes the gate by at most $0.03$.
+Replacing the video by a skeleton network removes the gain: with ST-GCN on the 3D joints
+the gate gives $\asdGateSkelThree$ ($\asdGateSkelThreeDelta$ against the measurements). On
+\asd\ this might only mean that the skeleton network is weak; KOA-PD-NM separates the two
+explanations. In a secondary, post-hoc analysis in the binary form of the \asd\ task
+(disorder versus healthy), the background-removed video branch scores $\koaVideoBin$,
+the measurements $\koaMeasBin$ and the gate $\koaGateBin$ (permuted: $\koaPermBin$; the true
+gate is higher in $\koaGateGtPermBin$\% of permutations), whereas ST-GCN alone scores
+$\koaSkelBin$---as good as the video---yet gating with it gives $\koaGateSkelBin$: its
+errors coincide with those of the measurements (either-correct bound $\koaEitherSkelBin$
+against $\koaEitherVideoBin$ for video). In the pre-specified three-class task the pattern
+is the same in direction but weaker: fusion with video reaches $\koaGateThree$ from
+$\koaMeasThree$, the permuted gate $\koaPermThree$ and plain averaging $\koaFixedThree$, so
+the benefit there is that of fusion rather than of gating; with ST-GCN it is
+$\koaGateSkelThree$. CARE-PD releases no video, and with a joint-based second branch no
+fusion rule helps. Measurements and learned features are thus complementary when the learner sees what the
+keypoints discard, and the deviation is a useful routing signal when the measurement branch
+has a blind sub-population, as on \asd.
 
-The measurement ablation (Table~\ref{tab:ablation}, top) explains the last point.
-\emph{Head forward alone} is uninformative ($0.41$; its direction even reverses because
-dropped-head patients in the non-\asd\ group lean the head further), yet removing it costs
-the most ($0.717\to0.688$, AUC $0.79\to0.74$). Head posture is a \emph{conditional} sign:
-given the trunk inclination, the head's position relative to the trunk separates the
-forward-inclined \asd\ patient from the dropped-head non-\asd\ patient. Trunk lean alone
-gives $0.707$, and dropping the whole lumbar--pelvis group costs almost nothing ($0.713$)
-because its three quantities are largely redundant: five numbers are, in effect, one strong
-sign plus one conditional sign.
+\section{Discussion and Limitations}
 
-\subsection{Interpretability and negative results}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{figs/fig4_explanations.pdf}
-\caption{Readable decisions for three patients (grounded video branch, one seed): the five
-quantities with $z$-scores, $d$ against the fold's threshold, the weight, and the branch and
-fused probabilities.}
-\label{fig:cards}
-\end{figure}
-
-The grounded branch keeps what the supervision bought: attention alignment $0.533\pm0.001$
-(three seeds) against $0.135\pm0.034$ for Grad-CAM on the plain 3D CNN, $0.144$ for a
-centre prior and $0.068$ for a uniform map; $0.104\pm0.012$ without the grounding loss and
-$0.065$ when grounded to random locations; region presence AP $0.81$. The measurement
-branch needs no such machinery: every decision is five numbers, their deviation, and which
-branch was trusted (Fig.~\ref{fig:cards})---the classifier's input, not a post-hoc
-rendering. Three negative lines bound the claims (supplement): feeding the five quantities
-\emph{into} the video encoder, as auxiliary targets or by concatenation, never beats the
-video baseline in 255 runs except one variant at $0.715\pm0.008$, still below the five
-numbers alone; a soft region-weighted $\ell_1$ penalty on the bank is worse than a uniform
-one; and five uses of a vision--language model (frozen features, zero-shot diagnosis at AUC
-$0.44$, prompting, attribute questions, explanations) are at or below the 3D CNN. The gate
-helps linear measurement branches but not the random forest or gradient boosting.
-
-\section{Discussion, Limitations and Conclusion}
-
-The same annotation helps as a prior and not as a signal because it is coarse as a label but
-precise as a pointer: ``look at the trunk and the head'' translates into two well-defined
-angles a linear model exploits, whereas a network given a saliency target learns where to
-look without learning what the look means. That head posture is a conditional sign is, we
-think, why clinicians mark the head; we flag it for clinical confirmation. The cohort is small (67 primary
-patients, 21 non-\asd): intervals are about $\pm0.10$ wide and single-seed differences below
-$0.08$ are noise, so every number here is a three-seed or ten-partition mean. Fusion is
-evaluated on the fixed split only; the gate needs a linear, moderately accurate measurement
-branch; monocular 3D gives no coronal-plane quantities; data come from one centre.
-
-In conclusion, clinician attention is most useful not as something a gait network should
-learn but as a specification of what to measure, and the evidence strength of those
-measurements tells us when to trust them over the video.
+A clinical prior is coarse as a label and precise as a pointer: as supervision it taught a
+network where to look, not what the look means; as a specification it turned three short
+statements into five, eight and twelve numbers that a linear model exploits and a reader can
+check. \emph{Limits.} Cohorts have 14--96 subjects and intervals are wide; on the public
+data we claim parity with far simpler models, not a significant gain. CARE-PD encoder
+numbers are quoted, not re-run; the PD set was our second; the KOA-PD-NM binary analysis was
+post-hoc and its groups differ in age, sex and clothing; gate gains amount to one to five
+subjects and need a second branch with complementary errors; the \asd\ data come from one
+centre. Within these limits the conclusion is consistent across three disorders: clinical
+knowledge is most useful not as something a gait network should learn, but as a
+specification of what to measure.
 
 \bibliographystyle{splncs04}
 \bibliography{refs}

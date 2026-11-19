@@ -12,7 +12,7 @@ Comment:
                     keypoint (1, F, 17, 3) 相机坐标系米(x 行进 / y 向下 / z 左右, 根相对),
                     keypoint_score (1, F, 17) 有 3D 结果的帧为 1, 否则 0}
 关节顺序按 COCO-17(与 2D pkl 一致,ST-GCN 的邻接矩阵不用改):
-  mhr70 -> COCO: nose 0, eyes 1/2, ears 3/4, shoulders 5/6, elbows 7/8, wrists 41/62, hips 9/10, knees 11/12, ankles 13/14。
+  mhr70 -> COCO: nose 0, eyes 1/2, ears 3/4, shoulders 5/6, elbows 7/8, wrists 62/41(mhr70: 41 = right_wrist, 62 = left_wrist;2026-11-19 之前写反了,肘-腕连到了对侧), hips 9/10, knees 11/12, ankles 13/14。
 缺帧取最近的可用帧(相差 >5 帧记 0 分);整条视频没有 3D 结果的从 pkl 里略去(pose_for 会给全零)。
 frame_dir / total_frames / label 直接沿用 2D pkl 里的同名条目,保证 video_name 匹配与帧对齐规则完全相同。
 
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-COCO_FROM_MHR70 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 41, 62, 9, 10, 11, 12, 13, 14]
+COCO_FROM_MHR70 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 62, 41, 9, 10, 11, 12, 13, 14]
 MAX_GAP = 5
 
 
