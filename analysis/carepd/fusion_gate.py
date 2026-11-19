@@ -41,8 +41,11 @@ GRID_W = np.round(np.arange(0, 1.0001, 0.05), 2)
 GRID_Q, GRID_LO, GRID_HI = (0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5), (0.0, 0.25, 0.5), (0.75, 1.0)
 
 
+LABELS = [0, 1, 2]
+
+
 def f1(y, p):
-    return f1_score(y, p, labels=[0, 1, 2], average="macro", zero_division=0)
+    return f1_score(y, p, labels=LABELS, average="macro", zero_division=0)
 
 
 def measure_branch(X0, y, sub, folds, n_class):
@@ -93,7 +96,12 @@ def main() -> None:
     ap.add_argument("--perm", type=int, default=20)
     ap.add_argument("--gait", default="logs/carepd/gait.pkl")
     ap.add_argument("--set", default="rubric8", choices=["rubric8", "prior12"])
+    ap.add_argument("--binary", type=int, default=0, help="T > 0 时把任务改成二分类(评分 < T 对 >= T),检验门控是否依赖任务结构;"
+                                                          "端到端分支的四类概率按阈值两侧求和,测量分支按二分类重训")
     args = ap.parse_args()
+    if args.binary:
+        global LABELS
+        LABELS = [0, 1]
     bank = pickle.load(open(args.bank, "rb"))
     col = {f: i for i, f in enumerate(bank["features"])}
     cols = [col[f] for f in CLASSIC]
@@ -108,6 +116,12 @@ def main() -> None:
         y, sub = dct["y"], dct["subject"]
         assert len(D["y"]) == len(y) and (D["y"] == y).all() and (D["subject"] == sub).all(), "两个分支的行走顺序不一致"
         n_class = D["probs"].shape[2]
+        if args.binary:
+            T = args.binary
+            D["probs"] = np.stack([D["probs"][..., :T].sum(-1), D["probs"][..., T:].sum(-1)], -1)
+            y = (y >= T).astype(int); n_class = 2
+            if min(np.bincount(y, minlength=2)) < 10:
+                print(f"{c:10s} 阈值 {T} 下某一类不足 10 次行走,跳过"); continue
         Xm = dct["X"][:, cols] if args.set == "prior12" else gait["cohorts"][c]["X"][:, gcols]
         Pm, d, fold = measure_branch(Xm, y, sub, six_folds(c), n_class)
         res = [run(Pd, Pm, d, y, fold) for Pd in D["probs"]]

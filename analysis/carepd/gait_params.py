@@ -69,9 +69,18 @@ def asym(l: float, r: float) -> float:
 def walk_params(pose: np.ndarray, trans: np.ndarray, fps: int) -> np.ndarray:
     step = max(1, int(round(fps / 30)))
     f = fps / step                                           # 真实的有效帧率
-    P = forward_kinematics(np.asarray(pose)[::step], np.asarray(trans)[::step])
+    return params_from_joints(forward_kinematics(np.asarray(pose)[::step], np.asarray(trans)[::step]), f)
+
+
+def params_from_joints(P: np.ndarray, f: float, detrend: bool = False) -> np.ndarray:
+    """P (T, 24, 3):SMPL 关节顺序的世界坐标(x 左, y 上, z 前);只用到骨盆、髋、膝、踝、趾根、肩、肘、腕、头,
+    其余关节可以是 NaN。f = 帧率。detrend=True 时去掉骨盆高度随时间的线性趋势(单目重建里相机俯仰造成的假坡度)。"""
     k = max(1, int(round(0.1 * f)) | 1)
     P = smooth(P, k)
+    if detrend and len(P) >= 3:
+        t = np.arange(len(P))
+        a = np.polyfit(t, P[:, 0, 1], 1)[0]
+        P = P.copy(); P[..., 1] -= (a * (t - t.mean()))[:, None]
     B = body_frame(P)
     T = len(P)
     out = dict.fromkeys(FEATURES, np.nan)
