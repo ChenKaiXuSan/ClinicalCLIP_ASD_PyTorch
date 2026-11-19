@@ -59,6 +59,40 @@ PAIR_Q = {"incl": "sagittal inclination of the line from the lower to the upper 
           "dy": "height difference between the two landmarks, divided by trunk length",
           "dx": "left-right distance between the two landmarks, divided by trunk length"}
 PAIR_STATS, TRI_STATS = ["mean", "range"], ["mean", "min", "max", "range"]
+# 第二版语法(--grammar v2)追加的按步定义的量,对应 gait_params.FEATURES;列名 gait|<name>
+GAIT = {
+    "speed": "walking speed in metres per second",
+    "cadence": "cadence in steps per minute",
+    "step_time_cv": "step-to-step variability (coefficient of variation) of step duration",
+    "step_len": "step length: fore-aft distance between the two ankles at foot contact",
+    "step_len_cv": "step-to-step variability of step length",
+    "step_len_asym": "left-right asymmetry of step length",
+    "walk_ratio": "step length divided by cadence",
+    "step_width": "left-right distance between the two ankles at foot contact",
+    "ank_clear": "vertical excursion of the ankle over the walk, mean of both sides",
+    "ank_clear_min": "vertical excursion of the ankle, the smaller of the two sides",
+    "toe_clear": "vertical excursion of the forefoot over the walk, mean of both sides",
+    "foot_pitch_hs": "foot pitch angle at foot contact (positive = toes up, i.e. landing on the heel)",
+    "foot_pitch_to": "foot pitch angle at push-off",
+    "foot_pitch_range": "range of the foot pitch angle over the walk",
+    "arm_swing": "fore-aft excursion of the wrist relative to the shoulder, mean of both sides",
+    "arm_swing_min": "fore-aft excursion of the wrist relative to the shoulder, the smaller of the two sides",
+    "arm_swing_asym": "left-right asymmetry of the wrist excursion",
+    "sh_flex_range": "range of shoulder flexion-extension, mean of both sides",
+    "sh_flex_range_min": "range of shoulder flexion-extension, the smaller of the two sides",
+    "elbow_mean": "mean elbow angle",
+    "knee_rom": "range of the knee angle, mean of both sides",
+    "knee_rom_asym": "left-right asymmetry of the knee range",
+    "hip_rom": "range of hip flexion-extension, mean of both sides",
+    "hip_rom_asym": "left-right asymmetry of the hip range",
+    "ankle_rom": "range of the ankle angle, mean of both sides",
+    "trunk_lean": "mean forward lean of the trunk",
+    "head_fwd": "mean forward inclination of the head relative to the shoulders",
+    "trunk_rot_range": "range of axial rotation of the shoulder line",
+    "pelvis_vert_osc": "vertical oscillation of the pelvis",
+    "double_support": "fraction of time with both feet on the ground",
+}
+GRAMMAR = "v1"
 
 # 临床先验 = MDS-UPDRS 步态条目的评分要点(公开文本),相当于 ASD 里医生的关注区域
 RUBRIC = "stride amplitude, stride speed, height of foot lift, heel strike during walking, turning, and arm swing"
@@ -90,6 +124,9 @@ def build_prompt(task: str, regions: list[str] | None) -> str:
         '(2) a joint angle: {"type": "angle", "angle": <name>, "stat": <s>}\n'
         f"angle names:\n{ang}\nstat s: mean, min, max or range over the window\n\n"
         '(3) the walking speed: {"type": "speed"}\n\n'
+        + ("" if GRAMMAR == "v1" else
+           '(4) a per-step gait parameter computed from detected foot contacts over the whole walk: {"type": "gait", "name": <name>}\n'
+           "names:\n" + "\n".join(f"  {k}: {v}" for k, v in GAIT.items()) + "\n\n") +
         f"Landmarks:\n{lm}\n\n"
         f'Answer with a JSON array of exactly {K} objects, each with the fields above plus "rationale" (one short sentence). '
         "Output the JSON array only."
@@ -132,6 +169,11 @@ def parse(raw: str) -> tuple[list[dict], list[str], int]:
                 bad += 1
         elif t == "speed":
             cols.append("speed|pelvis|mean"); good.append(it)
+        elif t == "gait" and GRAMMAR != "v1":
+            if it.get("name") in GAIT:
+                cols.append(f"gait|{it['name']}"); good.append(it)
+            else:
+                bad += 1
         else:
             bad += 1
     return good, list(dict.fromkeys(cols)), bad
@@ -149,7 +191,10 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=5, help="每次并行采样的条数")
     ap.add_argument("--think", action=argparse.BooleanOptionalAction, default=True, help="文本模型是否开启思考模式(模板支持时)")
     ap.add_argument("--print-prompt", action="store_true")
+    ap.add_argument("--grammar", default="v1", choices=["v1", "v2"], help="v2 追加按步定义的步态参数(gait_params.py)")
     args = ap.parse_args()
+    global GRAMMAR
+    GRAMMAR = args.grammar
 
     if args.print_prompt:
         print(build_prompt(*CONDITIONS["prior_task"]))

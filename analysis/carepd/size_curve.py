@@ -22,12 +22,14 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_measure import CLASSIC, ROOT  # noqa: E402
+from gait_params import RUBRIC  # noqa: E402
 
 KS = [2, 4, 8, 12, 16, None]
 
@@ -48,6 +50,7 @@ def subsample(train_subjects: list[str], k: int | None, rep: int, fold: int) -> 
 def fit_predict(Xtr, ytr, Xte, model: str, seed: int):
     if len(set(ytr)) < 2:
         return np.full(len(Xte), ytr[0])
+    imp = SimpleImputer(strategy="median").fit(Xtr); Xtr, Xte = imp.transform(Xtr), imp.transform(Xte)
     sc = StandardScaler().fit(Xtr)
     if model == "rf":
         clf = RandomForestClassifier(n_estimators=200, class_weight="balanced_subsample", n_jobs=8, random_state=seed)
@@ -60,19 +63,23 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bank", default="logs/carepd/bank.pkl")
     ap.add_argument("--reps", type=int, default=10)
+    ap.add_argument("--gait", default="logs/carepd/gait.pkl")
     ap.add_argument("--out", default="logs/carepd/size_curve_measure.json")
     ap.add_argument("--sets-json", default=None, help="LLM 提案文件:用其中每个采样集合再画一条曲线(各集合取均值)")
     args = ap.parse_args()
     bank = pickle.load(open(args.bank, "rb"))
     col = {f: i for i, f in enumerate(bank["features"])}
-    methods = {"prior12_lr": ("lr", [col[f] for f in CLASSIC]), "bank_lr": ("lr_c", None), "bank_rf": ("rf", None)}
+    gait = pickle.load(open(args.gait, "rb"))
+    nb = len(bank["features"]); gcol = {f: nb + i for i, f in enumerate(gait["features"])}
+    methods = {"rubric8_lr": ("lr", [gcol[f] for f in RUBRIC]), "gait30_lr": ("lr", list(gcol.values())),
+               "prior12_lr": ("lr", [col[f] for f in CLASSIC]), "bank_rf": ("rf", list(range(nb)))}
     llm_sets = []
     if args.sets_json:
         S = json.load(open(args.sets_json))
         llm_sets = [[col[x] for x in s["columns"] if x in col] for s in S["samples"] if not s["greedy"] and s["columns"]]
     out = {}
     for c, d in bank["cohorts"].items():
-        X, y, sub = d["X"], d["y"], d["subject"]
+        X, y, sub = np.concatenate([d["X"], gait["cohorts"][c]["X"]], 1), d["y"], d["subject"]
         folds = six_folds(c)
         print(f"== {c}: 受试者 {len(set(sub))}, 每折训练受试者 {[len(t) for t, _ in folds]}")
         print(f"{'训练受试者数 k':>14s} " + " ".join(f"{m:>18s}" for m in list(methods) + (["llm_lr"] if llm_sets else [])))

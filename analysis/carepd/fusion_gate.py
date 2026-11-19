@@ -27,12 +27,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_measure import CLASSIC  # noqa: E402
+from gait_params import RUBRIC  # noqa: E402
 from size_curve import six_folds  # noqa: E402
 
 GRID_W = np.round(np.arange(0, 1.0001, 0.05), 2)
@@ -43,11 +45,12 @@ def f1(y, p):
     return f1_score(y, p, labels=[0, 1, 2], average="macro", zero_division=0)
 
 
-def measure_branch(X, y, sub, folds, n_class):
+def measure_branch(X0, y, sub, folds, n_class):
     """折外的测量分支概率与偏离度。"""
     P = np.zeros((len(y), n_class)); d = np.zeros(len(y)); fold = np.full(len(y), -1)
     for fi, (tr_s, te_s) in enumerate(folds):
         tr, te = np.isin(sub, tr_s), np.isin(sub, te_s)
+        X = SimpleImputer(strategy="median").fit(X0[tr]).transform(X0)
         sc = StandardScaler().fit(X[tr])
         clf = LogisticRegression(C=1.0, class_weight="balanced", max_iter=3000).fit(sc.transform(X[tr]), y[tr])
         P[np.ix_(np.where(te)[0], clf.classes_)] = clf.predict_proba(sc.transform(X[te]))
@@ -88,10 +91,13 @@ def main() -> None:
     ap.add_argument("--bank", default="logs/carepd/bank.pkl")
     ap.add_argument("--probs-dir", default="logs/carepd")
     ap.add_argument("--perm", type=int, default=20)
+    ap.add_argument("--gait", default="logs/carepd/gait.pkl")
+    ap.add_argument("--set", default="rubric8", choices=["rubric8", "prior12"])
     args = ap.parse_args()
     bank = pickle.load(open(args.bank, "rb"))
     col = {f: i for i, f in enumerate(bank["features"])}
     cols = [col[f] for f in CLASSIC]
+    gait = pickle.load(open(args.gait, "rb")); gcols = [gait["features"].index(f) for f in RUBRIC]
     keys = ["deep", "measure", "fixed0.5", "nested_w", "gate"]
     print(f"{'队列':10s} " + " ".join(f"{k:>14s}" for k in keys) + f" {'gate_perm':>14s}   门控 - max(单分支)")
     for c, dct in bank["cohorts"].items():
@@ -102,7 +108,8 @@ def main() -> None:
         y, sub = dct["y"], dct["subject"]
         assert len(D["y"]) == len(y) and (D["y"] == y).all() and (D["subject"] == sub).all(), "两个分支的行走顺序不一致"
         n_class = D["probs"].shape[2]
-        Pm, d, fold = measure_branch(dct["X"][:, cols], y, sub, six_folds(c), n_class)
+        Xm = dct["X"][:, cols] if args.set == "prior12" else gait["cohorts"][c]["X"][:, gcols]
+        Pm, d, fold = measure_branch(Xm, y, sub, six_folds(c), n_class)
         res = [run(Pd, Pm, d, y, fold) for Pd in D["probs"]]
         rng = np.random.default_rng(0)
         perm = [run(D["probs"][i % len(D["probs"])], Pm, d, y, fold, rng)["gate"] for i in range(args.perm)]
