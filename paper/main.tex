@@ -199,8 +199,8 @@ leave-one-subject-out, walk-level predictions pooled over folds, macro-F1 over s
 Encoder results are quoted from the benchmark paper (frozen encoder, linear probe, one run),
 not re-run. \textbf{KOA-PD-NM}~\cite{kour2020koapdnm} (public). Sagittal RGB videos of 50
 knee-osteoarthritis, 16 Parkinson's and 30 healthy subjects, two walks each (190 usable
-videos). Keypoints, split design and video model are as for \asd; the metric is three-class
-balanced accuracy. Acquisition differs with the label here---frame rate (98\% of KOA clips
+videos). Keypoints, split design and video model are as for \asd\ (with a class-weighted loss, as
+the groups are unbalanced); the metric is three-class balanced accuracy. Acquisition differs with the label here---frame rate (98\% of KOA clips
 at 50\,fps, 86\% of healthy clips at 30), room, clothing---so all videos are resampled by
 time to 25\,fps and the video branch sees person-centred crops with the background removed
 by instance segmentation; raw-frame and silhouette-only variants serve as checks.
@@ -259,7 +259,7 @@ subject-bootstrap intervals are wide (PD-GaM \pdGamCi, BMCLab \pdBmcCi), so pari
 defensible reading. The benchmark's own hand-crafted baseline averages $\pdRf$. Against an ST-GCN trained on
 the same joints and splits (Fig.~\ref{fig:size}) the measurements are ahead on PD-GaM at
 every training size, by $\pdSizeGapTwo$ and $\pdSizeGapFour$ with two and four subjects, and
-level or ahead elsewhere. Our first set for this dataset, twelve posture quantities in the \asd\ grammar, averaged
+ahead or within resampling noise ($\le0.02$ behind) elsewhere. Our first set for this dataset, twelve posture quantities in the \asd\ grammar, averaged
 $\pdVone$; the item names per-step quantities, which that grammar could not express, so we
 extended $\mathcal{G}$ and re-derived the set once from the item text before evaluating it
 (both sets: supplement).
@@ -282,7 +282,7 @@ the rubric set lies at percentiles $\pdGamPct$, $\pdBmcPct$, $\pdTsduPct$ and $\
 random per-step sets, on KOA-PD-NM at $\koaRandPct$. A prior thus beats most label-free
 choices without being exceptional: clearly on PD-GaM, 3DGait and KOA-PD-NM, moderately on
 \asd, not on BMCLab or T-SDU-PD, where impairment is global and most kinematic quantities
-track severity. Its value is being right without looking at labels. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
+track severity. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
 each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
 $\pdLlmNoRubric$ when the text is withheld and $\pdRand$ for random sets
 (Table~\ref{tab:public}). On \asd, sets proposed from the clinician regions score
@@ -304,7 +304,7 @@ either branch correct. CARE-PD: mean of four cohorts, macro-F1.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.8\linewidth]{figs/v2_fig3_strata.pdf}
+\includegraphics[width=0.72\linewidth]{figs/v2_fig3_strata.pdf}
 \caption{Accuracy by tercile of the deviation $d$: the video branch is better where the
 measurements are unremarkable, the measurements where they deviate.}
 \label{fig:strata}
@@ -318,16 +318,16 @@ above the permuted-deviation gate ($\asdPerm$) in $\asdGateGtPerm$\% of permutat
 Fig.~\ref{fig:strata} shows why: in the tercile of least deviation, $\asdStrLowAsd$\% of
 patients are \asd---patients without visible sagittal compensation---and the measurement
 branch is right $\asdStrLowMeas$ of the time against $\asdStrLowVideo$ for the video; in the
-top tercile the measurements are right $\asdStrHighMeas$ of the time. Computing $d$ from the
-four unmarked-region quantities instead gives $\asdGateUnmDev$.
+top tercile the measurements are right $\asdStrHighMeas$ of the time. With $d$ from the four
+unmarked-region quantities the gate gives $\asdGateUnmDev$.
 
 Replacing the video by a skeleton network removes the gain: with ST-GCN on the 3D joints
 the gate gives $\asdGateSkelThree$ ($\asdGateSkelThreeDelta$ against the measurements). On
 \asd\ this may only reflect a weak skeleton network; KOA-PD-NM separates the two
 explanations. In a secondary, post-hoc analysis in the binary form of the \asd\ task
 (disorder versus healthy), the background-removed video branch scores $\koaVideoBin$,
-the measurements $\koaMeasBin$ and the gate $\koaGateBin$ (permuted: $\koaPermBin$; the true
-gate is higher in $\koaGateGtPermBin$\% of permutations), whereas ST-GCN alone scores
+the measurements $\koaMeasBin$ and the gate $\koaGateBin$ (permuted $\koaPermBin$, beaten in
+$\koaGateGtPermBin$\% of permutations), whereas ST-GCN alone scores
 $\koaSkelBin$---as good as the video---yet gating with it gives $\koaGateSkelBin$: its
 errors coincide with those of the measurements (either-correct bound $\koaEitherSkelBin$
 against $\koaEitherVideoBin$ for video). In the pre-specified three-class task the pattern
@@ -335,9 +335,8 @@ is the same in direction but weaker: fusion with video reaches $\koaGateThree$ f
 $\koaMeasThree$, the permuted gate $\koaPermThree$ and plain averaging $\koaFixedThree$, so
 the benefit there is that of fusion rather than of gating; with ST-GCN it is
 $\koaGateSkelThree$. CARE-PD releases no video, and with a joint-based second branch no
-fusion rule helps. Measurements and learned features are thus complementary when the learner sees what the
-keypoints discard, and the deviation is a useful routing signal when the measurement branch
-has a blind sub-population, as on \asd.
+fusion rule helps. Measurements and learned features are complementary when the learner sees what keypoints
+discard, and the deviation routes well when the measurements have a blind sub-population.
 
 \section{Discussion and Limitations}
 
@@ -348,9 +347,9 @@ check. \emph{Limits.} Cohorts have 14--96 subjects and intervals are wide; on th
 data we claim parity with far simpler models, not a significant gain. The PD set was our second; the KOA-PD-NM binary analysis was
 post-hoc and its groups differ in age, sex and clothing; gate gains amount to one to five
 subjects and need a second branch with complementary errors; the \asd\ data come from one
-centre. Within these limits the conclusion is consistent across three disorders: clinical
-knowledge is most useful not as something a gait network should learn, but as a
-specification of what to measure.
+centre. Within these limits, across three disorders, clinical knowledge
+is most useful not as something a gait network should learn but as a specification of
+what to measure.
 
 \bibliographystyle{splncs04}
 \bibliography{refs}
