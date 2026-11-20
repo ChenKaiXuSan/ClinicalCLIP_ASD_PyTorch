@@ -195,6 +195,11 @@ def macros(numbers: dict) -> None:
         for kind in ("gradcam", "center", "uniform"):
             if kind in A["align"] and A["align"][kind]["n"] == len(A["seeds"]):
                 M[{"gradcam": "asdGradcam", "center": "asdCenter", "uniform": "asdUniform"}[kind]] = f2(A["align"][kind]["mean"])
+    if "annotation" in A:
+        an = A["annotation"]
+        M.update({"annClips": str(an["clips"]), "annPatients": str(an["recordings"]), "annAgree": pct(an["agree"]),
+                  "annLumbar": pct(an["any"]["lumbar_pelvis"]), "annHead": pct(an["any"]["head"]), "annShoulder": pct(an["any"]["shoulder"]),
+                  "annWrist": pct(an["any"]["wrist"]), "annFoot": pct(an["any"]["foot"])})
     if "llm" in A:
         L = A["llm"]
         mk = lambda cond: float(np.mean([L[f"{mdl}|{cond}"]["bacc"]["mean"] for mdl in ("Qwen3-32B", "gpt-oss-20b")]))      # noqa: E731

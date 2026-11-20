@@ -236,6 +236,21 @@ def asd(data_root: str, numbers: dict, n_random: int = 200, n_perm: int = 20) ->
         ev = json.load(open(f))
         A["llm"] = {k: {"bacc": ms(v["macro"]), "auc": ms(v["auc"]), "n_cols": float(np.mean(v["n_cols"])) if isinstance(v["n_cols"], list) else float(v["n_cols"])}
                     for k, v in ev.items() if k.split("|")[0] in ("Qwen3-32B", "gpt-oss-20b")}
+    # ---- 医生标注的描述统计。标注单位是片段:两位医生对每段录像的两个片段(start / end)各选一个关注区域(五选一)。
+    #      按片段计、去掉交叉验证里过滤掉的 HipOA 患者。旧稿的 72 / 47 / 23 / 3 / 1% 与 45.7% 用现有标注文件复现不出来,已弃用。
+    import ast
+    ann = {}
+    for d in (1, 2):
+        for row in csv.DictReader(open(Path(data_root) / "clinical_CLIP_dataset/doctor_result" / f"doctor{d}.csv", encoding="utf-8")):
+            key = (row["video file name"].strip("_"), int(row["video number"]), row["flag"])
+            ann.setdefault(key, {})[d] = {x.replace("_btn", "") for x in ast.literal_eval(row["attention"])}
+    clips = [k for k, v in ann.items() if len(v) == 2 and "HipOA" not in k[0]]
+    regs = ["lumbar_pelvis", "head", "shoulder", "wrist", "foot"]
+    A["annotation"] = {"clips": len(clips), "recordings": len({k[0] for k in clips}),
+                       "any": {r: float(np.mean([r in (ann[k][1] | ann[k][2]) for k in clips])) for r in regs},
+                       "agree": float(np.mean([ann[k][1] == ann[k][2] for k in clips])),
+                       "one_per_clip": bool(all(len(ann[k][d]) == 1 for k in clips for d in (1, 2)))}
+    print("医生标注:", A["annotation"], flush=True)
     numbers["asd"] = A
 
 

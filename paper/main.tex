@@ -117,10 +117,11 @@ branch or a video network determines the output.}
 \label{sec:prior}
 
 A \emph{prior} $\Pi$ is whatever clinicians have already written down about a disorder's
-gait. We use three kinds. For \asd, two spine surgeons marked per patient the regions they
-attend to among five; at least one marked lumbar--pelvis for 72\% of patients, head for 47\%
-and shoulder for 23\% (wrist 3\%, foot 1\%), the two agree on only 45.7\% of region
-decisions and six combinations occur, so we read the annotation as a group-level prior
+gait. We use three kinds. For \asd, two spine surgeons each chose, for two clips
+of every recording ($\annClips$ clips, $\annPatients$ patients), the one region among five
+they attend to; at least one chose lumbar--pelvis for $\annLumbar$\% of clips, head for
+$\annHead$\% and shoulder for $\annShoulder$\% (wrist $\annWrist$\%, foot $\annFoot$\%), and
+they agree on only $\annAgree$\%, so we read the annotation as a group-level prior
 $\Pi_{\mathrm{ASD}}{=}\{$lumbar--pelvis, head, shoulder$\}$. For Parkinson's disease
 $\Pi_{\mathrm{PD}}$ is the text of MDS-UPDRS item 3.10~\cite{goetz2008mdsupdrs} (``stride
 amplitude, stride speed, height of foot lift, heel strike during walking, turning, and arm
