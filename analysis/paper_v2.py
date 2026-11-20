@@ -110,7 +110,10 @@ def asd(data_root: str, numbers: dict, n_random: int = 200, n_perm: int = 20) ->
         A["meas"][k] = {"bacc": ms(m), "auc": ms(a)}
     print("测量分支:", {k: round(v["bacc"]["mean"], 3) for k, v in A["meas"].items()}, flush=True)
 
-    # ---- 随机 5 量对照:与先验 5 量同一口径(患者级均值 -> 标准化 -> LR C=1 balanced,10 份划分取均值)
+    # ---- 随机集合对照。必须同口径:参照是先验 5 量在测量库语法里的那几列(prior_sparse_lr.HAND5,髋角左右分开共 7 列),
+    #      与随机列走同一条流水线(患者级均值 -> 标准化 -> LR C=1 balanced,10 份划分取均值)。
+    #      A["meas"]["prior5"](0.717)是 geom_attributes_3d.py 的专用几何代码算的,口径不同,不能拿来和随机列比
+    #      (2026-11-20 之前的 paper_v2 这样比过,得到的"第 91 百分位"偏高,已改)。
     Xp, _, _, y, pids, feats, regions, _ = load_bank(str(BANK), data_root, 2)
     keep = np.array([p not in drop for p in pids])
     Xk, yk = Xp[keep], y[keep]
@@ -129,13 +132,17 @@ def asd(data_root: str, numbers: dict, n_random: int = 200, n_perm: int = 20) ->
     within = np.array([all(r in DOCTOR_REGIONS for r in rs) for rs in regions])
     touching = np.array([any(r in DOCTOR_REGIONS for r in rs) for rs in regions])
     pools = {"all": np.arange(len(feats)), "clinician": np.where(within)[0], "unmarked": np.where(~touching)[0]}
-    ref = A["meas"]["prior5"]["bacc"]["mean"]
+    from prior_sparse_lr import HAND5
+    hand_cols = [feats.index(f) for f in HAND5]
+    ref = lr10(hand_cols)
     rng = np.random.default_rng(0)
-    A["random5"] = {"ref": ref, "n_bank": int(len(feats))}
-    for pn, pool in pools.items():
-        v = np.array([lr10(rng.choice(pool, 5, replace=False)) for _ in range(n_random)])
-        A["random5"][pn] = {"mean": float(v.mean()), "std": float(v.std()), "pct": float((v < ref).mean()), "n": n_random, "pool": int(len(pool)), "values": v.tolist()}
-        print(f"随机 5 量 [{pn}, 池 {len(pool)}]: {v.mean():.3f} ± {v.std():.3f}; 先验 5 量 {ref:.3f} 处于第 {(v < ref).mean() * 100:.0f} 百分位", flush=True)
+    A["random5"] = {"ref_bank": ref, "ref_bank_ncols": len(hand_cols), "ref_geom": A["meas"]["prior5"]["bacc"]["mean"], "n_bank": int(len(feats))}
+    for k in (len(hand_cols), 5):                     # 主口径:与参照同样多的列;另报 5 列
+        for pn, pool in pools.items():
+            v = np.array([lr10(rng.choice(pool, k, replace=False)) for _ in range(n_random)])
+            key = pn if k == len(hand_cols) else f"{pn}_k5"
+            A["random5"][key] = {"mean": float(v.mean()), "std": float(v.std()), "pct": float((v < ref).mean()), "n": n_random, "k": k, "pool": int(len(pool)), "values": v.tolist()}
+            print(f"随机 {k} 列 [{pn}, 池 {len(pool)}]: {v.mean():.3f} ± {v.std():.3f}; 先验 5 量(库内 {len(hand_cols)} 列){ref:.3f} 处于第 {(v < ref).mean() * 100:.0f} 百分位", flush=True)
 
     # ---- 测量库上的数据驱动选择(p0_controls repeated-splits / p1_robustness nonlinear 落盘的结果)
     A["bank"] = {}
@@ -190,6 +197,45 @@ def asd(data_root: str, numbers: dict, n_random: int = 200, n_perm: int = 20) ->
               f"门控 {F['step_outl']['mean']:.3f} ± {F['step_outl']['std']:.3f}  置换 {F['perm']['mean']:.3f}  门控 > 置换 {F['gate_gt_perm']:.0%}  上限 {F['ceiling']['mean']:.3f}", flush=True)
     A["strata"] = [{"video": strata[b][0] / strata[b][3], "measure": strata[b][1] / strata[b][3], "gate": strata[b][2] / strata[b][3],
                     "n": int(strata[b][3]), "asd_frac": strata[b][4] / strata[b][3]} for b in range(3)] if strata.sum() else []
+    # ---- 注意力对齐:定位监督模型训练日志里的 test/attn_align(全部 test 视频);Grad-CAM 等参照来自
+    #      pegasus/attn_gradcam_job.sh(同一视频基线的验证集最佳 checkpoint,每折 test 的前 60 条视频)
+    import csv
+    import re
+    al = []
+    for s in SEEDS:
+        v = []
+        for k in range(5):
+            runs = sorted({q.parent.parent for q in (ROOT / "logs/train" / f"M0_concept_learned_e50__f{k}_s{s}").rglob("best_preds/*_pred.pt")}, key=lambda q: q.stat().st_mtime)
+            for f in (runs[-1].rglob("metrics.csv") if runs else []):
+                for row in csv.DictReader(open(f)):
+                    if row.get("test/attn_align") not in (None, ""):
+                        v.append(float(row["test/attn_align"]))
+        if v:
+            al.append(float(np.mean(v)))
+    A["align"] = {"grounded": ms(al)}
+    ref: dict = {}
+    for s in SEEDS:
+        per = {}
+        for k in range(5):
+            f = ROOT / "logs/attn_align" / f"B0_3dcnn_e50_s{s}_f{k}.log"
+            if f.exists():
+                for line in open(f):
+                    m = re.match(r"\s+(uniform|random|center|gradcam)\s+([0-9.]+)", line)
+                    if m:
+                        per.setdefault(m.group(1), []).append(float(m.group(2)))
+        for kind, v in per.items():
+            if len(v) == 5:
+                ref.setdefault(kind, []).append(float(np.mean(v)))
+    for kind, v in ref.items():
+        A["align"][kind] = ms(v)
+    print("注意力对齐:", {k: f"{v['mean']:.3f}±{v['std']:.3f} (n={v['n']})" for k, v in A["align"].items()}, flush=True)
+
+    # ---- LLM 由医生区域提出的测量(analysis/llm_measure_eval.py,修正后的测量库)
+    f = ROOT / "logs/llm_measure/eval.json"
+    if f.exists():
+        ev = json.load(open(f))
+        A["llm"] = {k: {"bacc": ms(v["macro"]), "auc": ms(v["auc"]), "n_cols": float(np.mean(v["n_cols"])) if isinstance(v["n_cols"], list) else float(v["n_cols"])}
+                    for k, v in ev.items() if k.split("|")[0] in ("Qwen3-32B", "gpt-oss-20b")}
     numbers["asd"] = A
 
 

@@ -159,7 +159,7 @@ def tables(numbers: dict) -> None:
     print("tables ok ->", TAB)
 
 
-REQUIRED = ["asdTsf", "asdTsfAuc", "asdLone", "asdGb", "asdGateUnmDev", "asdGateGrounded", "asdGateTsf", "asdGateSkelThree", "asdGateSkelThreeDelta",
+REQUIRED = ["asdGradcam", "asdTsf", "asdTsfAuc", "asdLone", "asdGb", "asdGateUnmDev", "asdGateGrounded", "asdGateTsf", "asdGateSkelThree", "asdGateSkelThreeDelta",
             "asdGateSkelTwo", "asdStrLowVideo", "asdStrLowMeas", "asdStrHighMeas", "asdStrLowAsd", "asdSkelLo", "asdSkelHi"]
 
 
@@ -188,7 +188,17 @@ def macros(numbers: dict) -> None:
               "asdMinusHead": f3(m["minus_head_forward"]["bacc"]["mean"]), "asdMinusHeadAuc": f2(m["minus_head_forward"]["auc"]["mean"]),
               "asdRandAll": f2(r["all"]["mean"]), "asdRandClin": f2(r["clinician"]["mean"]), "asdRandUnm": f2(r["unmarked"]["mean"]),
               "asdRandAllPct": pct(r["all"]["pct"]), "asdRandClinPct": pct(r["clinician"]["pct"]), "asdRandUnmPct": pct(r["unmarked"]["pct"]),
-              "asdRandN": str(r["all"]["n"])})
+              "asdRandAllPctFive": pct(r["all_k5"]["pct"]), "asdRandN": str(r["all"]["n"]), "asdRandK": str(r["all"]["k"]),
+              "asdPriorBank": f2(r["ref_bank"])})
+    if "align" in A:
+        M["asdAlign"] = f2(A["align"]["grounded"]["mean"])
+        for kind in ("gradcam", "center", "uniform"):
+            if kind in A["align"] and A["align"][kind]["n"] == len(A["seeds"]):
+                M[{"gradcam": "asdGradcam", "center": "asdCenter", "uniform": "asdUniform"}[kind]] = f2(A["align"][kind]["mean"])
+    if "llm" in A:
+        L = A["llm"]
+        mk = lambda cond: float(np.mean([L[f"{mdl}|{cond}"]["bacc"]["mean"] for mdl in ("Qwen3-32B", "gpt-oss-20b")]))      # noqa: E731
+        M.update({"asdLlmMarked": f2(mk("marked_task")), "asdLlmUnmarked": f2(mk("unmarked_task")), "asdLlmNoRegion": f2(mk("noregion_task"))})
     for k, name in (("l1_uniform", "asdLone"), ("gb", "asdGb"), ("rf", "asdRf"), ("l1_strict_doctor", "asdLoneClin")):
         if k in b:
             M[name] = f3(b[k]["bacc"]["mean"]); M[name + "Sd"] = f3(b[k]["bacc"]["std"]); M[name + "Auc"] = f2(b[k]["auc"]["mean"])

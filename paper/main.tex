@@ -217,7 +217,7 @@ $\pm$ s.d.\ over five seeds. Measurement rows: ten random five-fold partitions.}
 
 Table~\ref{tab:asd} gives the comparison. The video models reach $\asdVidLo$--$\asdVidHi$;
 grounding the 3D CNN to the clinician regions yields attention that matches the annotation
-($0.53$ alignment against $0.14$ for Grad-CAM on the plain network) but $\asdGrounded$
+($\asdAlign$ alignment against $\asdGradcam$ for Grad-CAM on the plain network) but $\asdGrounded$
 accuracy, no better than the ungrounded $\asdVideo$. The four skeleton networks are at
 chance ($\asdSkelLo$--$\asdSkelHi$). The five prior-defined quantities reach
 $\asdPrior\pm\asdPriorSd$ (AUC $\asdPriorAuc$), and $\asdPriorTwoD$ from 2D keypoints, so the
@@ -272,21 +272,23 @@ $\koaDemo$), which no method here can remove.
 
 \subsection{Is it the selection, and can it be automated?}
 
-On \asd, five random grammar items average $\asdRandAll$; the prior-defined five lie at
-percentile $\asdRandAllPct$ of $\asdRandN$ random draws ($\asdRandClinPct$ when drawing only
-within the clinician regions, $\asdRandUnmPct$ within unmarked ones). Data-driven selection
-over all 1,272 candidates, which does see the labels, gains at most $0.02$ in balanced
-accuracy and loses in AUC ($\ell_1$: $\asdLone$ / $\asdLoneAuc$; boosting: $\asdGb$ /
-$\asdGbAuc$; prior five: $\asdPrior$ / $\asdPriorAuc$). On CARE-PD the rubric set lies at
-percentiles $\pdGamPct$, $\pdBmcPct$, $\pdTsduPct$ and $\pdTdgPct$ of random per-step sets
-on the four cohorts, and on KOA-PD-NM at percentile $\koaRandPct$. Selection therefore matters where the disease signal is focal
-(\asd, 3DGait) and little where impairment is global and most kinematic quantities correlate
-with severity (BMCLab, T-SDU-PD); the prior's value is that it is right without looking at
-labels. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
+On \asd, the five prior quantities written in the grammar (hips left and right apart,
+$\asdRandK$ columns, $\asdPriorBank$) lie at percentile $\asdRandAllPct$ of $\asdRandN$ random
+sets of equal size ($\asdRandClinPct$ when drawn within the clinician regions,
+$\asdRandUnmPct$ within unmarked ones); data-driven selection over all 1,272 candidates,
+which sees the labels, is on par with the five as defined ($\ell_1$: $\asdLone$, AUC
+$\asdLoneAuc$; boosting: $\asdGb$, $\asdGbAuc$; prior: $\asdPrior$, $\asdPriorAuc$). On CARE-PD
+the rubric set lies at percentiles $\pdGamPct$, $\pdBmcPct$, $\pdTsduPct$ and $\pdTdgPct$ of
+random per-step sets, on KOA-PD-NM at $\koaRandPct$. A prior thus beats most label-free
+choices without being exceptional: clearly on PD-GaM, 3DGait and KOA-PD-NM, moderately on
+\asd, not on BMCLab or T-SDU-PD, where impairment is global and most kinematic quantities
+track severity. Its value is being right without looking at labels. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
 each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
 $\pdLlmNoRubric$ when the text is withheld and $\pdRand$ for random sets
-(Table~\ref{tab:public}); on \asd, sets proposed from the region names match the
-hand-written five and those for unmarked regions do not (supplement).
+(Table~\ref{tab:public}). On \asd, sets proposed from the clinician regions score
+$\asdLlmMarked$, as do the prior five in the grammar ($\asdPriorBank$) and, notably, sets
+proposed from the disease name alone ($\asdLlmNoRegion$); sets for unmarked regions score
+$\asdLlmUnmarked$. The model's own knowledge of the disease is thus a usable prior.
 
 \subsection{When does fusion help? Pixels versus keypoints}
 
