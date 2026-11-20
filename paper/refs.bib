@@ -1,231 +1,236 @@
-% 参考文献。标 "TODO verify" 的条目是我凭记忆写的关键信息不全或不确定,投稿前逐条核对(DOI / 页码 / 作者顺序)。
-% 临床类(ASD 步态、矢状面代偿)最好由临床合作者给出他们常引的 3–5 篇。
+% 参考文献(2026-11-20 逐条核对过:出版方页面 / DOI 的 Crossref 记录 / PubMed / 会议论文集页面)。
+% MICCAI 2026 规定参考文献最多 2 页,且允许"作者多于三人时用 et al. 缩写":这里统一保留前三位作者 + others。
+% 版面上不打印 DOI(省空间);DOI 记在 xdoi 字段里(BibTeX 忽略未知字段),数据集条目例外,DOI 就是它的标识。
+% 注意:注释行里不要出现 at 符号,BibTeX 会把它当成新条目的开头。
 
-% ---------------------------------------------------------------- 临床:成人脊柱畸形、矢状面平衡、步态
+% ---------------------------------------------------------------- 临床:成人脊柱畸形、帕金森、膝骨关节炎
 @article{schwab2012srs,
-  title   = {Scoliosis {R}esearch {S}ociety--{S}chwab adult spinal deformity classification: a validation study},
-  author  = {Schwab, Frank and Ungar, Benjamin and Blondel, Benjamin and Buchowski, Jacob and Coe, Jeffrey and Deinlein, Donald and DeWald, Christopher and Mehdian, Hossein and Shaffrey, Christopher and Tribus, Clifford and Lafage, Virginie},
+  author  = {Schwab, Frank and Ungar, Benjamin and Blondel, Benjamin and others},
+  title   = {{Scoliosis Research Society}---{Schwab} Adult Spinal Deformity Classification: A Validation Study},
   journal = {Spine},
   volume  = {37},
   number  = {12},
   pages   = {1077--1082},
-  year    = {2012}
+  year    = {2012},
+  xdoi    = {10.1097/BRS.0b013e31823e15e2}
 }
 @article{glassman2005sagittal,
-  title   = {The impact of positive sagittal balance in adult spinal deformity},
-  author  = {Glassman, Steven D. and Bridwell, Keith and Dimar, John R. and Horton, William and Berven, Sigurd and Schwab, Frank},
+  author  = {Glassman, Steven D. and Bridwell, Keith and Dimar, John R. and others},
+  title   = {The Impact of Positive Sagittal Balance in Adult Spinal Deformity},
   journal = {Spine},
   volume  = {30},
   number  = {18},
   pages   = {2024--2029},
-  year    = {2005}
-}
-@article{TODO_asd_gait_1,
-  title   = {TODO verify: gait analysis in adult spinal deformity (trunk inclination / compensatory pelvic retroversion / hip-knee flexion during walking)},
-  author  = {TODO},
-  journal = {TODO (Spine / European Spine Journal / Gait \& Posture)},
-  year    = {TODO},
-  note    = {TODO: 2--3 clinical references from the co-authors on trunk inclination, pelvic retroversion and hip/knee flexion during walking}
-}
-@article{TODO_dhs_gait,
-  title   = {TODO verify: gait characteristics of dropped head syndrome / cervical kyphosis},
-  author  = {TODO},
-  journal = {TODO},
-  year    = {TODO},
-  note    = {TODO: reference for dropped-head gait, used to interpret the conditional head-posture sign}
-}
-
-% ---------------------------------------------------------------- 视频 / 骨架模型
-@inproceedings{feichtenhofer2019slowfast,
-  title     = {{SlowFast} networks for video recognition},
-  author    = {Feichtenhofer, Christoph and Fan, Haoqi and Malik, Jitendra and He, Kaiming},
-  booktitle = {ICCV},
-  year      = {2019}
-}
-@inproceedings{bertasius2021timesformer,
-  title     = {Is space-time attention all you need for video understanding?},
-  author    = {Bertasius, Gedas and Wang, Heng and Torresani, Lorenzo},
-  booktitle = {ICML},
-  year      = {2021}
-}
-@article{kay2017kinetics,
-  title   = {The {K}inetics human action video dataset},
-  author  = {Kay, Will and Carreira, Joao and Simonyan, Karen and Zhang, Brian and Hillier, Chloe and Vijayanarasimhan, Sudheendra and Viola, Fabio and Green, Tim and Back, Trevor and Natsev, Paul and Suleyman, Mustafa and Zisserman, Andrew},
-  journal = {arXiv preprint arXiv:1705.06950},
-  year    = {2017}
-}
-@inproceedings{yan2018stgcn,
-  title     = {Spatial temporal graph convolutional networks for skeleton-based action recognition},
-  author    = {Yan, Sijie and Xiong, Yuanjun and Lin, Dahua},
-  booktitle = {AAAI},
-  year      = {2018}
-}
-@inproceedings{chen2021ctrgcn,
-  title     = {Channel-wise topology refinement graph convolution for skeleton-based action recognition},
-  author    = {Chen, Yuxin and Zhang, Ziqi and Yuan, Chunfeng and Li, Bing and Deng, Ying and Hu, Weiming},
-  booktitle = {ICCV},
-  year      = {2021}
-}
-@inproceedings{tong2022videomae,
-  title     = {{VideoMAE}: masked autoencoders are data-efficient learners for self-supervised video pre-training},
-  author    = {Tong, Zhan and Song, Yibing and Wang, Jue and Wang, Limin},
-  booktitle = {NeurIPS},
-  year      = {2022}
-}
-@misc{TODO_sam3dbody,
-  title   = {TODO verify: {SAM} 3{D} {B}ody -- promptable 3D human mesh recovery (Meta AI, 2025)},
-  author  = {TODO},
-  year    = {2025},
-  note    = {TODO: verify authors and title of the official technical report}
-}
-@misc{TODO_yolov8pose,
-  title   = {TODO verify: {YOLOv8} (Ultralytics) pose estimation},
-  author  = {Jocher, Glenn and others},
-  year    = {2023},
-  note    = {TODO: cite the Ultralytics repository or documentation}
-}
-
-% ---------------------------------------------------------------- 可解释性、概念瓶颈、先验
-@inproceedings{selvaraju2017gradcam,
-  title     = {{Grad-CAM}: visual explanations from deep networks via gradient-based localization},
-  author    = {Selvaraju, Ramprasaath R. and Cogswell, Michael and Das, Abhishek and Vedantam, Ramakrishna and Parikh, Devi and Batra, Dhruv},
-  booktitle = {ICCV},
-  year      = {2017}
-}
-@inproceedings{koh2020cbm,
-  title     = {Concept bottleneck models},
-  author    = {Koh, Pang Wei and Nguyen, Thao and Tang, Yew Siang and Mussmann, Stephen and Pierson, Emma and Kim, Been and Liang, Percy},
-  booktitle = {ICML},
-  year      = {2020}
-}
-@article{rudin2019stop,
-  title   = {Stop explaining black box machine learning models for high stakes decisions and use interpretable models instead},
-  author  = {Rudin, Cynthia},
-  journal = {Nature Machine Intelligence},
-  volume  = {1},
-  number  = {5},
-  pages   = {206--215},
-  year    = {2019}
-}
-@inproceedings{radford2021clip,
-  title     = {Learning transferable visual models from natural language supervision},
-  author    = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and Mishkin, Pamela and Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
-  booktitle = {ICML},
-  year      = {2021}
-}
-
-% ---------------------------------------------------------------- 特征选择、融合、统计
-@article{tibshirani1996lasso,
-  title   = {Regression shrinkage and selection via the lasso},
-  author  = {Tibshirani, Robert},
-  journal = {Journal of the Royal Statistical Society: Series B},
-  volume  = {58},
-  number  = {1},
-  pages   = {267--288},
-  year    = {1996}
-}
-@article{guyon2003feature,
-  title   = {An introduction to variable and feature selection},
-  author  = {Guyon, Isabelle and Elisseeff, Andr{\'e}},
-  journal = {Journal of Machine Learning Research},
-  volume  = {3},
-  pages   = {1157--1182},
-  year    = {2003}
-}
-@article{kittler1998combining,
-  title   = {On combining classifiers},
-  author  = {Kittler, Josef and Hatef, Mohamad and Duin, Robert P. W. and Matas, Jiri},
-  journal = {IEEE TPAMI},
-  volume  = {20},
-  number  = {3},
-  pages   = {226--239},
-  year    = {1998}
-}
-@article{varma2006nested,
-  title   = {Bias in error estimation when using cross-validation for model selection},
-  author  = {Varma, Sudhir and Simon, Richard},
-  journal = {BMC Bioinformatics},
-  volume  = {7},
-  pages   = {91},
-  year    = {2006}
-}
-@article{mcnemar1947note,
-  title   = {Note on the sampling error of the difference between correlated proportions or percentages},
-  author  = {McNemar, Quinn},
-  journal = {Psychometrika},
-  volume  = {12},
-  number  = {2},
-  pages   = {153--157},
-  year    = {1947}
-}
-@article{pedregosa2011sklearn,
-  title   = {Scikit-learn: machine learning in {P}ython},
-  author  = {Pedregosa, Fabian and Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Michel, Vincent and Thirion, Bertrand and Grisel, Olivier and Blondel, Mathieu and Prettenhofer, Peter and Weiss, Ron and Dubourg, Vincent and Vanderplas, Jake and Passos, Alexandre and Cournapeau, David and Brucher, Matthieu and Perrot, Matthieu and Duchesnay, {\'E}douard},
-  journal = {Journal of Machine Learning Research},
-  volume  = {12},
-  pages   = {2825--2830},
-  year    = {2011}
-}
-
-% ---------------------------------------------------------------- VLM(补充材料)
-@misc{TODO_siglip2,
-  title   = {TODO verify: {SigLIP} 2: multilingual vision-language encoders with improved semantic understanding, localization, and dense features},
-  author  = {Tschannen, Michael and others},
-  year    = {2025},
-  note    = {arXiv 2025; TODO: verify author list}
-}
-@misc{TODO_qwen3vl,
-  title   = {TODO verify: {Qwen3-VL} technical report},
-  author  = {Qwen Team},
-  year    = {2025},
-  note    = {TODO: verify official title and arXiv id}
-}
-
-% ---------------------------------------------------------------- 三个数据集版本新增(2026-11)。标 TODO verify 的作者 / 页码凭记忆,投稿前核对
-@inproceedings{carepd2025,
-  title     = {{CARE-PD}: A Multi-Site Anonymized Clinical Dataset for {P}arkinson's Disease Gait Assessment},
-  author    = {Adeli, Vida and others},
-  booktitle = {Advances in Neural Information Processing Systems (Datasets and Benchmarks Track)},
-  year      = {2025},
-  note      = {arXiv:2510.04312. TODO verify author list}
-}
-@misc{kour2020koapdnm,
-  title        = {{KOA-PD-NM}: Gait video dataset for knee osteoarthritis, {P}arkinson's disease and normal subjects},
-  author       = {Kour, Navleen and Gupta, Sunanda and Arora, Sakshi},
-  year         = {2020},
-  howpublished = {Mendeley Data, V1},
-  doi          = {10.17632/44pfnysy89.1},
-  note         = {TODO verify title as printed on the dataset page}
+  year    = {2005},
+  xdoi    = {10.1097/01.brs.0000179086.30449.96}
 }
 @article{goetz2008mdsupdrs,
-  title   = {Movement {D}isorder {S}ociety-sponsored revision of the {U}nified {P}arkinson's {D}isease {R}ating {S}cale ({MDS-UPDRS}): scale presentation and clinimetric testing results},
-  author  = {Goetz, Christopher G. and Tilley, Barbara C. and Shaftman, Stephanie R. and Stebbins, Glenn T. and Fahn, Stanley and Martinez-Martin, Pablo and others},
+  author  = {Goetz, Christopher G. and Tilley, Barbara C. and Shaftman, Stephanie R. and others},
+  title   = {{Movement Disorder Society}-sponsored revision of the {Unified Parkinson's Disease Rating Scale} ({MDS-UPDRS}): Scale presentation and clinimetric testing results},
   journal = {Movement Disorders},
   volume  = {23},
   number  = {15},
   pages   = {2129--2170},
-  year    = {2008}
+  year    = {2008},
+  xdoi    = {10.1002/mds.22340}
+}
+@article{mills2013koagait,
+  author  = {Mills, Kathryn and Hunt, Michael A. and Ferber, Reed},
+  title   = {Biomechanical Deviations During Level Walking Associated With Knee Osteoarthritis: A Systematic Review and Meta-Analysis},
+  journal = {Arthritis Care \& Research},
+  volume  = {65},
+  number  = {10},
+  pages   = {1643--1665},
+  year    = {2013},
+  xdoi    = {10.1002/acr.22015}
+}
+@article{boekesteijn2022imukoa,
+  author  = {Boekesteijn, R. J. and van Gerven, J. and Geurts, A. C. H. and others},
+  title   = {Objective gait assessment in individuals with knee osteoarthritis using inertial sensors: A systematic review and meta-analysis},
+  journal = {Gait \& Posture},
+  volume  = {98},
+  pages   = {109--120},
+  year    = {2022},
+  xdoi    = {10.1016/j.gaitpost.2022.09.002}
 }
 @article{zeni2008gait,
+  author  = {Zeni, Jr., J. A. and Richards, J. G. and Higginson, J. S.},
   title   = {Two simple methods for determining gait events during treadmill and overground walking using kinematic data},
-  author  = {Zeni, Joseph A. and Richards, James G. and Higginson, Jill S.},
   journal = {Gait \& Posture},
   volume  = {27},
   number  = {4},
   pages   = {710--714},
-  year    = {2008}
+  year    = {2008},
+  xdoi    = {10.1016/j.gaitpost.2007.07.007}
+}
+
+% ---------------------------------------------------------------- 数据集
+@inproceedings{carepd2025,
+  author    = {Adeli, Vida and Klabu{\v{c}}ar, Ivan and Rajabi, Javad and others},
+  title     = {{CARE-PD}: A Multi-Site Anonymized Clinical Dataset for {Parkinson's} Disease Gait Assessment},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks Track},
+  volume    = {38},
+  pages     = {146132--146167},
+  year      = {2025},
+  xdoi      = {10.52202/085713-4391}
+}
+@inproceedings{kour2022koapdnm_icicc,
+  author    = {Kour, Navleen and Sunanda and Arora, Sakshi},
+  title     = {A Vision-Based Gait Dataset for Knee Osteoarthritis and {Parkinson's} Disease Analysis with Severity Levels},
+  booktitle = {International Conference on Innovative Computing and Communications ({ICICC} 2021)},
+  series    = {Advances in Intelligent Systems and Computing},
+  volume    = {1394},
+  pages     = {303--317},
+  publisher = {Springer},
+  year      = {2022},
+  xdoi      = {10.1007/978-981-16-3071-2_26}
+}
+@misc{kour2020koapdnm,
+  author       = {Kour, Navleen and Gupta, Sunanda and Arora, Sakshi},
+  title        = {Gait Dataset for Knee Osteoarthritis and {Parkinson's} Disease Analysis With Severity Levels},
+  howpublished = {Mendeley Data, V1},
+  year         = {2020},
+  doi          = {10.17632/44pfnysy89.1}
+}
+@article{kour2022koapdnm_paper,
+  author  = {Kour, Navleen and Gupta, Sunanda and Arora, Sakshi},
+  title   = {A vision-based clinical analysis for classification of knee osteoarthritis, {Parkinson's} disease and normal gait with severity based on k-nearest neighbour},
+  journal = {Expert Systems},
+  volume  = {39},
+  number  = {6},
+  pages   = {e12955},
+  year    = {2022},
+  xdoi    = {10.1111/exsy.12955}
 }
 @inproceedings{zhou2024gaitpatterns,
+  author    = {Zhou, Zirui and Liang, Junhao and Peng, Zizhao and others},
   title     = {Gait Patterns as Biomarkers: A Video-Based Approach for Classifying Scoliosis},
-  author    = {Zhou, Zirui and Liang, Junhao and Peng, Zizhao and Fan, Chao and An, Fengwei and Yu, Shiqi},
-  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention -- {MICCAI} 2024},
+  series    = {LNCS},
+  volume    = {15005},
+  pages     = {284--294},
+  publisher = {Springer},
   year      = {2024},
-  note      = {TODO verify author list}
+  xdoi      = {10.1007/978-3-031-72086-4_27}
 }
 @inproceedings{zhou2025poseprior,
+  author    = {Zhou, Zirui and Peng, Zizhao and Jin, Dongyang and others},
   title     = {Pose as Clinical Prior: Learning Dual Representations for Scoliosis Screening},
-  author    = {Zhou, Zirui and others},
-  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention -- {MICCAI} 2025},
+  series    = {LNCS},
+  volume    = {15972},
+  pages     = {464--474},
+  publisher = {Springer},
   year      = {2025},
-  note      = {TODO verify author list}
+  xdoi      = {10.1007/978-3-032-05169-1_45}
+}
+
+% ---------------------------------------------------------------- 姿态 / 视频 / 骨架 / 语言模型
+@inproceedings{sam3dbody2025,
+  author    = {Yang, Xitong and Kukreja, Devansh and Pinkus, Don and others},
+  title     = {{SAM 3D Body}: Robust Full-Body Human Mesh Recovery},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {7209--7219},
+  year      = {2026}
+}
+@misc{ultralytics2023yolov8,
+  author = {Jocher, Glenn and Chaurasia, Ayush and Qiu, Jing},
+  title  = {Ultralytics {YOLOv8}},
+  url    = {https://github.com/ultralytics/ultralytics},
+  note   = {Version 8.0.0},
+  year   = {2023}
+}
+@inproceedings{feichtenhofer2019slowfast,
+  author    = {Feichtenhofer, Christoph and Fan, Haoqi and Malik, Jitendra and others},
+  title     = {{SlowFast} Networks for Video Recognition},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {6201--6210},
+  year      = {2019},
+  xdoi      = {10.1109/ICCV.2019.00630}
+}
+@inproceedings{bertasius2021timesformer,
+  author    = {Bertasius, Gedas and Wang, Heng and Torresani, Lorenzo},
+  title     = {Is Space-Time Attention All You Need for Video Understanding?},
+  booktitle = {Proceedings of the 38th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {139},
+  pages     = {813--824},
+  year      = {2021}
+}
+@inproceedings{yan2018stgcn,
+  author    = {Yan, Sijie and Xiong, Yuanjun and Lin, Dahua},
+  title     = {Spatial Temporal Graph Convolutional Networks for Skeleton-Based Action Recognition},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume    = {32},
+  pages     = {7444--7452},
+  year      = {2018},
+  xdoi      = {10.1609/aaai.v32i1.12328}
+}
+@inproceedings{chen2021ctrgcn,
+  author    = {Chen, Yuxin and Zhang, Ziqi and Yuan, Chunfeng and others},
+  title     = {Channel-wise Topology Refinement Graph Convolution for Skeleton-Based Action Recognition},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {13339--13348},
+  year      = {2021},
+  xdoi      = {10.1109/ICCV48922.2021.01311}
+}
+@article{qwen3report2025,
+  author  = {Yang, An and Li, Anfeng and Yang, Baosong and others},
+  title   = {{Qwen3} Technical Report},
+  journal = {arXiv preprint arXiv:2505.09388},
+  year    = {2025}
+}
+@misc{gptoss2025,
+  author       = {{OpenAI}},
+  title        = {{gpt-oss-120b \& gpt-oss-20b Model Card}},
+  howpublished = {arXiv preprint arXiv:2508.10925},
+  year         = {2025}
+}
+
+% ---------------------------------------------------------------- 可解释性、概念瓶颈、融合
+@inproceedings{selvaraju2017gradcam,
+  author    = {Selvaraju, Ramprasaath R. and Cogswell, Michael and Das, Abhishek and others},
+  title     = {{Grad-CAM}: Visual Explanations from Deep Networks via Gradient-based Localization},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision (ICCV)},
+  pages     = {618--626},
+  year      = {2017},
+  xdoi      = {10.1109/ICCV.2017.74}
+}
+@inproceedings{koh2020cbm,
+  author    = {Koh, Pang Wei and Nguyen, Thao and Tang, Yew Siang and others},
+  title     = {Concept Bottleneck Models},
+  booktitle = {Proceedings of the 37th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {119},
+  pages     = {5338--5348},
+  year      = {2020}
+}
+@article{rudin2019stop,
+  author  = {Rudin, Cynthia},
+  title   = {Stop explaining black box machine learning models for high stakes decisions and use interpretable models instead},
+  journal = {Nature Machine Intelligence},
+  volume  = {1},
+  number  = {5},
+  pages   = {206--215},
+  year    = {2019},
+  xdoi    = {10.1038/s42256-019-0048-x}
+}
+@inproceedings{radford2021clip,
+  author    = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and others},
+  title     = {Learning Transferable Visual Models From Natural Language Supervision},
+  booktitle = {Proceedings of the 38th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {139},
+  pages     = {8748--8763},
+  year      = {2021}
+}
+@article{kittler1998combining,
+  author  = {Kittler, J. and Hatef, M. and Duin, R. P. W. and others},
+  title   = {On combining classifiers},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume  = {20},
+  number  = {3},
+  pages   = {226--239},
+  year    = {1998},
+  xdoi    = {10.1109/34.667881}
 }

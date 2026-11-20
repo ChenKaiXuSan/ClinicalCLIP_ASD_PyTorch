@@ -64,9 +64,9 @@ the video~\cite{koh2020cbm,radford2021clip}.
 We argue that this misreads what the knowledge is. ``Watch the trunk and the head'' is not a
 label for a patient; it is a statement about which quantities carry the diagnosis. We
 therefore use a clinical prior for one thing only, offline: to choose a small set of named
-kinematic measurements. The measurements are computed by geometry from estimated 3D
-keypoints, classified by a logistic regression with default regularisation, and the prior
-is never needed at test time (Fig.~\ref{fig:pipeline}).
+kinematic measurements, computed geometrically from estimated 3D keypoints and classified
+by an untuned logistic regression; the prior is never needed at test time
+(Fig.~\ref{fig:pipeline}).
 
 We test the idea on three datasets under their own protocols. \textbf{(i)} On a private
 \asd\ cohort with region annotations from two clinicians, using the annotation as supervision
@@ -74,15 +74,14 @@ buys a checkable attention map but no accuracy, whereas five quantities defined 
 marked regions outperform every end-to-end model we trained. \textbf{(ii)} The same pipeline,
 with the prior replaced by a public rating rubric, is on par with or above pretrained motion
 encoders on the four labelled cohorts of CARE-PD~\cite{carepd2025} and above
-shortcut-controlled video and skeleton networks on KOA-PD-NM~\cite{kour2020koapdnm}.
+shortcut-controlled video and skeleton networks on KOA-PD-NM~\cite{kour2022koapdnm_icicc}.
 \textbf{(iii)} The step from prior to measurement set can be delegated to a language model
 that sees only text. \textbf{(iv)} A per-patient \emph{evidence-strength gate} that defers to
 a second branch when the measurements are unremarkable adds accuracy when the second branch
 reads pixels; when it reads the same keypoints it adds nothing, on all three datasets.
-Measurement sets are fixed before outcomes are seen, classifiers are untuned, and we
-report random-set, permutation and shortcut controls. Cohorts are small and most differences
-to learned models lie within bootstrap intervals: we claim parity or better with a handful
-of parameters and a readable decision, not superiority.
+Measurement sets are fixed before outcomes are seen and we report random-set, permutation
+and shortcut controls; as cohorts are small and most differences lie within bootstrap
+intervals, we claim parity or better with a readable decision, not superiority.
 
 \section{Related Work}
 
@@ -105,7 +104,7 @@ combination~\cite{kittler1998combining}, interpretable by design~\cite{rudin2019
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.8\linewidth]{figs/v2_fig1_pipeline.pdf}
+\includegraphics[width=\linewidth]{figs/v2_fig1_pipeline.pdf}
 \caption{A clinical prior is used once, offline, to choose what to measure. At test time a
 subject needs only the video: 3D keypoints give the measurements $\mathbf{m}_i$ and their
 deviation $d_i$ from the population norm; a gate on $d_i$ decides whether the measurement
@@ -125,8 +124,9 @@ they agree on only $\annAgree$\%, so we read the annotation as a group-level pri
 $\Pi_{\mathrm{ASD}}{=}\{$lumbar--pelvis, head, shoulder$\}$. For Parkinson's disease
 $\Pi_{\mathrm{PD}}$ is the text of MDS-UPDRS item 3.10~\cite{goetz2008mdsupdrs} (``stride
 amplitude, stride speed, height of foot lift, heel strike during walking, turning, and arm
-swing''). For knee osteoarthritis $\Pi_{\mathrm{KOA}}$ is the textbook description: reduced
-knee excursion, side-to-side asymmetry, prolonged double support.
+swing''). For knee osteoarthritis $\Pi_{\mathrm{KOA}}$ is reduced knee
+excursion~\cite{mills2013koagait,boekesteijn2022imukoa}, to which we added side-to-side
+asymmetry and longer double support, expected for an often unilateral, painful disorder.
 
 Measurements are expressed in a fixed grammar $\mathcal{G}$ over body landmarks in a
 walking-aligned frame: \emph{posture} quantities (sagittal inclination, offset or distance
@@ -187,24 +187,25 @@ KL loss tying each attention map to the region rendered on the skeleton.
 \subsection{Datasets and protocol}
 \label{sec:protocol}
 
-\textbf{\asd} (private). Lateral walking videos of 79 patients; 3D keypoints from
-SAM-3D-Body~\cite{TODO_sam3dbody} exist for 67 (46 \asd, 21 non-\asd: dropped-head syndrome,
+\textbf{\asd} (private; collected at **** with ethics approval ****). Lateral walking videos
+of 79 patients; 2D keypoints from YOLOv8~\cite{ultralytics2023yolov8}, 3D keypoints from
+SAM 3D Body~\cite{sam3dbody2025} exist for 67 (46 \asd, 21 non-\asd: dropped-head syndrome,
 lumbar stenosis, hip osteoarthritis), the cohort used throughout. End-to-end models share
 one nested five-fold patient split (validation selects the checkpoint), 50 epochs and five
 seeds; measurement models have no training randomness, so their five-fold partition is
 redrawn ten times. We report patient-level balanced accuracy (chance $0.5$) and AUC.
-\textbf{CARE-PD}~\cite{carepd2025} (public). SMPL gait sequences with clinician-rated
+\textbf{CARE-PD}~\cite{carepd2025} (public, CC BY-NC-ND 4.0). SMPL gait sequences with clinician-rated
 UPDRS-gait scores per walk for four cohorts: PD-GaM (30 subjects, 1,700 walks), BMCLab (23,
 781), T-SDU-PD (14, 381), 3DGait (43, 90). We follow the official protocol: within-cohort
 leave-one-subject-out, walk-level predictions pooled over folds, macro-F1 over scores 0--2.
 Encoder results are quoted from the benchmark paper (frozen encoder, linear probe, one run),
-not re-run. \textbf{KOA-PD-NM}~\cite{kour2020koapdnm} (public). Sagittal RGB videos of 50
+not re-run. \textbf{KOA-PD-NM}~\cite{kour2022koapdnm_icicc,kour2020koapdnm} (public, CC BY 4.0). Sagittal RGB videos of 50
 knee-osteoarthritis, 16 Parkinson's and 30 healthy subjects, two walks each (190 usable
-videos). Keypoints, split design and video model are as for \asd\ (with a class-weighted loss, as
-the groups are unbalanced); the metric is three-class balanced accuracy. Acquisition differs with the label here---frame rate (98\% of KOA clips
+videos). Keypoints, splits and video model are as for \asd\ (with a class-weighted loss); the
+metric is three-class balanced accuracy. Acquisition differs with the label here---frame rate (98\% of KOA clips
 at 50\,fps, 86\% of healthy clips at 30), room, clothing---so all videos are resampled by
 time to 25\,fps and the video branch sees person-centred crops with the background removed
-by instance segmentation; raw-frame and silhouette-only variants serve as checks.
+by instance segmentation (YOLOv8); raw-frame and silhouette-only variants serve as checks.
 
 \subsection{Adult spinal deformity: supervision versus measurement}
 
@@ -262,8 +263,7 @@ the same joints and splits (Fig.~\ref{fig:size}) the measurements are ahead on P
 every training size, by $\pdSizeGapTwo$ and $\pdSizeGapFour$ with two and four subjects, and
 ahead or within resampling noise ($\le0.02$ behind) elsewhere. Our first set for this dataset, twelve posture quantities in the \asd\ grammar, averaged
 $\pdVone$; the item names per-step quantities, which that grammar could not express, so we
-extended $\mathcal{G}$ and re-derived the set once from the item text before evaluating it
-(both sets: supplement).
+extended $\mathcal{G}$ and re-derived the set once from the item text before evaluating it.
 
 On KOA-PD-NM the twelve quantities reach $\koaPrior$ (random sets of twelve: $\koaRand$). A video
 network on raw frames scores $\koaRaw$, but $\koaVideo$ once the background is removed and
@@ -283,8 +283,8 @@ the rubric set lies at percentiles $\pdGamPct$, $\pdBmcPct$, $\pdTsduPct$ and $\
 random per-step sets, on KOA-PD-NM at $\koaRandPct$. A prior thus beats most label-free
 choices without being exceptional: clearly on PD-GaM, 3DGait and KOA-PD-NM, moderately on
 \asd, not on BMCLab or T-SDU-PD, where impairment is global and most kinematic quantities
-track severity. Given the item text, two open language models (Qwen3-32B, gpt-oss-20b; 20 samples
-each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
+track severity. Given the item text, two open language models (Qwen3-32B~\cite{qwen3report2025},
+gpt-oss-20b~\cite{gptoss2025}; 20 samples each) propose sets averaging $\pdLlmRubric$ on CARE-PD against $\pdMean$ for ours,
 $\pdLlmNoRubric$ when the text is withheld and $\pdRand$ for random sets
 (Table~\ref{tab:public}). On \asd, sets proposed from the clinician regions score
 $\asdLlmMarked$, as do the prior five in the grammar ($\asdPriorBank$) and, notably, sets

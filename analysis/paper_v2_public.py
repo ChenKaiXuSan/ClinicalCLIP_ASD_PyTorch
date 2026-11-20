@@ -268,24 +268,33 @@ def _arrow(ax, p, q, color="#444444", ls="-"):
 
 
 def fig1() -> None:
-    fig = plt.figure(figsize=(4.8, 1.75))
-    ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 12); ax.set_ylim(0, 4.3); ax.axis("off")
-    # 上路:先验 -> 测量 -> LR
-    _box(ax, 0.1, 2.65, 2.5, 1.5, "clinical prior\n(offline, once)\nmarked regions /\nrating rubric / textbook", C_ANN)
-    _box(ax, 3.2, 2.65, 2.3, 1.5, "measurement set\n5–12 named\nquantities\n(expert or LLM)", C_GEOM)
-    _box(ax, 6.1, 2.65, 2.2, 1.5, "geometry on\n3D keypoints\n$\\rightarrow$ $\\mathbf{m}_i$,\ndeviation $d_i$", C_GEOM)
-    _box(ax, 8.9, 2.65, 1.5, 1.5, "logistic\nregression\n$P^m_i$", C_GEOM)
-    # 下路:视频
-    _box(ax, 0.1, 0.2, 2.5, 1.5, "walking video\n(test-time input)", "#333333")
-    _box(ax, 3.2, 0.2, 2.3, 1.5, "3D pose\nestimation", "#333333")
-    _box(ax, 6.1, 0.2, 2.2, 1.5, "video network\n(pixels)", C_VIDEO)
-    _box(ax, 8.9, 0.2, 1.5, 1.5, "$P^v_i$", C_VIDEO)
-    _box(ax, 10.85, 1.3, 1.05, 1.7, "gate\n$d_i\\!<\\!\\tau$:\nvideo\nelse:\nmeas.", C_GATE, fs=5.6)
-    for p, q in (((2.6, 3.4), (3.2, 3.4)), ((5.5, 3.4), (6.1, 3.4)), ((8.3, 3.4), (8.9, 3.4)), ((2.6, 0.95), (3.2, 0.95)), ((8.3, 0.95), (8.9, 0.95))):
-        _arrow(ax, p, q)
-    _arrow(ax, (4.35, 1.7), (6.6, 2.65))                     # 3D 关键点 -> 几何
-    _arrow(ax, (1.35, 0.2), (1.35, 0.02)); ax.plot([1.35, 7.2], [0.02, 0.02], color="#444444", lw=0.9); _arrow(ax, (7.2, 0.02), (7.2, 0.2))
-    _arrow(ax, (10.4, 3.2), (10.85, 2.6), C_GEOM); _arrow(ax, (10.4, 1.1), (10.85, 1.7), C_VIDEO)
+    """流程图。按满宽(LNCS 正文宽 4.8 英寸)放进论文,图内字号 6pt 即印刷字号;扁平布局,高度约 1.2 英寸。"""
+    fig = plt.figure(figsize=(4.8, 1.22))
+    ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 12); ax.set_ylim(-0.32, 3.0); ax.axis("off")
+    fs = 6.0
+    top, bot, h = 1.78, 0.12, 1.08
+    cols = [(0.05, 2.5), (3.0, 2.25), (5.75, 2.3), (8.55, 1.45)]
+    texts_top = ["clinical prior (once)\nregions / rubric / text", "measurement set\n(expert or LLM)",
+                 "geometry on 3D joints\n$\\mathbf{m}_i$, deviation $d_i$", "logistic\nregression $P^m_i$"]
+    texts_bot = ["walking video\n(only test-time input)", "3D pose\nestimation", "video network\n(pixels)", "$P^v_i$"]
+    colors_top = [C_ANN, C_GEOM, C_GEOM, C_GEOM]
+    colors_bot = ["#333333", "#333333", C_VIDEO, C_VIDEO]
+    for (x, w), tt, tb, ct, cb in zip(cols, texts_top, texts_bot, colors_top, colors_bot):
+        _box(ax, x, top, w, h, tt, ct, fs=fs)
+        _box(ax, x, bot, w, h, tb, cb, fs=fs)
+    gx, gw = 10.5, 1.45
+    _box(ax, gx, 0.55, gw, 1.9, "gate on $d_i$\nsmall: video\nlarge: meas.", C_GATE, fs=fs)
+    for i in range(3):
+        x0 = cols[i][0] + cols[i][1]; x1 = cols[i + 1][0]
+        _arrow(ax, (x0, top + h / 2), (x1, top + h / 2))
+    _arrow(ax, (cols[0][0] + cols[0][1], bot + h / 2), (cols[1][0], bot + h / 2))
+    _arrow(ax, (cols[2][0] + cols[2][1], bot + h / 2), (cols[3][0], bot + h / 2))
+    _arrow(ax, (cols[1][0] + cols[1][1] * 0.6, bot + h), (cols[2][0] + 0.5, top))           # 3D 关键点 -> 几何
+    xv, xn = cols[0][0] + cols[0][1] / 2, cols[2][0] + cols[2][1] / 2                         # 视频 -> 视频网络(从下方绕过姿态估计)
+    ax.plot([xv, xv, xn], [bot, -0.2, -0.2], color="#444444", lw=0.9)
+    _arrow(ax, (xn, -0.2), (xn, bot))
+    _arrow(ax, (cols[3][0] + cols[3][1], top + h / 2), (gx, 2.05), C_GEOM)
+    _arrow(ax, (cols[3][0] + cols[3][1], bot + h / 2), (gx, 0.95), C_VIDEO)
     fig.savefig(FIG / "v2_fig1_pipeline.pdf", bbox_inches="tight", pad_inches=0.02); fig.savefig(FIG / "v2_fig1_pipeline.png", bbox_inches="tight", dpi=220); plt.close(fig)
 
 
